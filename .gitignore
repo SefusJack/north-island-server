@@ -1,0 +1,29 @@
+# Build output
+/out/
+bin/
+obj/
+TestResults/
+
+# What the server writes while it runs. Anchored to this folder, so src/NorthIsland.Server/Data stays in.
+/data/
+/logs/
+
+# Passwords and local Docker settings
+.env
+.env.*
+!.env.example
+
+# The client's game files
+/gamedata/
+
+# Editors and tools
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Operating system files
+Thumbs.db
+Desktop.ini
+.DS_Store

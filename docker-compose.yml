@@ -1,0 +1,44 @@
+# The server with its accounts in PostgreSQL: docker compose up -d --build.
+# Settings go in a .env file next to this one: POSTGRES_PASSWORD (required), GAMEDATA (the folder of the client's data files), POSTGRES_PORT.
+name: north-island
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: northisland
+      POSTGRES_USER: northisland
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a .env file next to docker-compose.yml}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"       # this PC only: psql, pgAdmin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U northisland -d northisland"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      Database__Provider: Postgres
+      ConnectionStrings__Accounts: Host=db;Database=northisland;Username=northisland;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a .env file next to docker-compose.yml}
+    ports:
+      - "6414:6414"     # game
+      - "6416:6416"     # server status
+    volumes:
+      - ${GAMEDATA:-./gamedata}:/gamedata:ro
+      - server-data:/app/data     # JSON files to import on the first start; everything is saved in the database
+      - server-logs:/app/logs
+    stop_grace_period: 30s        # a stop saves everyone online first
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  server-data:
+  server-logs:

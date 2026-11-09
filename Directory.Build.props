@@ -1,0 +1,35 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- CA1707: underscores in test names; CA1848/CA1873: LoggerMessage source generators are overkill here -->
+    <NoWarn>$(NoWarn);CA1707;CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+
+  <!-- Shown in the program's file properties -->
+  <PropertyGroup>
+    <Version>0.4.0-prealpha</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Product>North Island Server</Product>
+    <Copyright>Copyright (C) north-island-server contributors</Copyright>
+  </PropertyGroup>
+
+  <!-- Build output goes to out/bin/<architecture> of the checkout: the server and its libraries -->
+  <PropertyGroup Condition="'$(FileBasedProgram)' != 'true'">
+    <OutRoot>$(MSBuildThisFileDirectory)out/</OutRoot>
+    <BuildArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</BuildArch>
+    <BuildArch Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier.Substring($([MSBuild]::Add($(RuntimeIdentifier.LastIndexOf('-')), 1))))</BuildArch>
+    <BuildArch>$(BuildArch.Replace('x86', 'x32'))</BuildArch>
+    <BaseOutputPath>$(OutRoot)bin/</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(BuildArch)/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <BaseIntermediateOutputPath>$(OutRoot)obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(BuildArch)/$(Configuration)/</IntermediateOutputPath>
+  </PropertyGroup>
+</Project>

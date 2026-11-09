@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyTitle>North Island Server</AssemblyTitle>
+    <Description>North Island Server</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NorthIsland.Protocol\NorthIsland.Protocol.csproj" />
+    <ProjectReference Include="..\NorthIsland.GameData\NorthIsland.GameData.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\EquipmentClasses.tsv" />
+    <EmbeddedResource Include="Data\MallBoxes.tsv" />
+    <EmbeddedResource Include="Data\LuckyBags.tsv" />
+    <EmbeddedResource Include="Data\BoxGuesses.tsv" />
+    <EmbeddedResource Include="Data\MaterialCodes.tsv" />
+    <EmbeddedResource Include="Data\GiftCards.tsv" />
+    <EmbeddedResource Include="Data\GiftBoxes.tsv" />
+    <EmbeddedResource Include="Data\GiftBoxGuesses.tsv" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/battle.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/progression.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/world.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/mall.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="quiz.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="events.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

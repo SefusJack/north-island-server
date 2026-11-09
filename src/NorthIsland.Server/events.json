@@ -1,0 +1,148 @@
+{
+  "events": [
+    {
+      "name": "New Year",
+      "start": "12-31",
+      "end": "01-01",
+      "drops": [ { "item": 34159, "percent": 3 } ],
+      "startNotice": 56,
+      "endNotice": 57
+    },
+    {
+      "name": "Chinese New Year",
+      "years": {
+        "2025": [ "01-27", "02-02" ],
+        "2026": [ "02-15", "02-21" ],
+        "2027": [ "02-04", "02-10" ],
+        "2028": [ "01-24", "01-30" ],
+        "2029": [ "02-11", "02-17" ],
+        "2030": [ "02-01", "02-07" ]
+      },
+      "drops": [ { "item": 34242, "percent": 3 }, { "item": 34290, "percent": 2 } ],
+      "startNotice": 51,
+      "scripts": [ { "map": 12100, "events": [ 12, 32, 37 ] } ]
+    },
+    {
+      "name": "Valentine's Day",
+      "start": "02-13",
+      "end": "02-15",
+      "drops": [ { "item": 32290, "percent": 4 }, { "item": 32289, "percent": 2 } ],
+      "startNotice": 39,
+      "endNotice": 40,
+      "scripts": [ { "map": 11003, "events": [ 76, 20 ] } ]
+    },
+    {
+      "name": "Dragon Boat Festival",
+      "years": {
+        "2025": [ "05-29", "06-07" ],
+        "2026": [ "06-17", "06-26" ],
+        "2027": [ "06-07", "06-16" ],
+        "2028": [ "05-26", "06-04" ],
+        "2029": [ "06-14", "06-23" ],
+        "2030": [ "06-03", "06-12" ]
+      },
+      "drops": [ { "item": 34127, "percent": 4 }, { "item": 34118, "percent": 4 }, { "item": 34162, "percent": 1 } ],
+      "startNotice": 15,
+      "endNotice": 16,
+      "scripts": [ { "map": 12110, "events": [ 12, 40 ] }, { "map": 60010, "events": [ 19, 71 ] }, { "map": 60010, "events": [ 85, 24 ] } ]
+    },
+    {
+      "name": "Qixi",
+      "years": {
+        "2025": [ "08-27", "09-06" ],
+        "2026": [ "08-17", "08-27" ],
+        "2027": [ "08-06", "08-16" ],
+        "2028": [ "08-24", "09-03" ],
+        "2029": [ "08-14", "08-24" ],
+        "2030": [ "08-03", "08-13" ]
+      },
+      "scripts": [ { "map": 12110, "events": [ 13, 43, 46 ] }, { "map": 12250, "events": [ 8, 56 ] }, { "map": 12110, "events": [ 55 ] },
+                   { "map": 12110, "events": [ 54, 16 ] }, { "map": 12100, "events": [ 44, 16 ] } ]
+    },
+    {
+      "name": "Mid-Autumn Festival",
+      "years": {
+        "2025": [ "10-04", "10-13" ],
+        "2026": [ "09-23", "10-02" ],
+        "2027": [ "09-13", "09-22" ],
+        "2028": [ "10-01", "10-10" ],
+        "2029": [ "09-20", "09-29" ],
+        "2030": [ "09-10", "09-19" ]
+      },
+      "drops": [ { "item": 34197, "percent": 4 }, { "item": 34149, "percent": 2 }, { "item": 34150, "percent": 2 }, { "item": 34151, "percent": 2 } ],
+      "startNotice": 25,
+      "endNotice": 26,
+      "scripts": [ { "map": 12110, "events": [ 14 ] }, { "map": 60010, "events": [ 16 ] }, { "map": 12050, "events": [ 75, 10 ] }, { "map": 60010, "events": [ 79, 22 ] } ]
+    },
+    {
+      "name": "Halloween",
+      "start": "10-30",
+      "end": "11-01",
+      "expMultiplier": 2,
+      "drops": [ { "item": 34310, "percent": 5 }, { "item": 34311, "percent": 3 }, { "item": 30340, "percent": 2 } ],
+      "startNotice": 27,
+      "endNotice": 28
+    },
+    {
+      "name": "Christmas",
+      "start": "12-24",
+      "end": "12-30",
+      "drops": [ { "item": 34276, "percent": 3 }, { "item": 34322, "percent": 3 }, { "item": 32286, "percent": 3 }, { "item": 34324, "percent": 3 } ],
+      "scripts": [ { "map": 11003, "events": [ 16 ] }, { "map": 12050, "events": [ 77, 12 ] } ]
+    },
+    {
+      "name": "White Day",
+      "start": "03-12",
+      "end": "03-24",
+      "scripts": [ { "map": 11003, "events": [ 17 ] } ]
+    },
+    {
+      "name": "Lantern Festival",
+      "years": {
+        "2025": [ "02-10", "02-15" ],
+        "2026": [ "03-01", "03-06" ],
+        "2027": [ "02-18", "02-23" ],
+        "2028": [ "02-07", "02-12" ],
+        "2029": [ "02-25", "03-02" ],
+        "2030": [ "02-15", "02-20" ]
+      },
+      "scripts": [ { "map": 12110, "events": [ 15 ] }, { "map": 12110, "events": [ 58, 17 ] } ]
+    },
+    {
+      "name": "Ghost Month",
+      "years": {
+        "2025": [ "08-23", "09-06" ],
+        "2026": [ "08-13", "08-27" ],
+        "2027": [ "08-02", "08-16" ],
+        "2028": [ "08-20", "09-03" ],
+        "2029": [ "08-10", "08-24" ],
+        "2030": [ "07-30", "08-13" ]
+      },
+      "scripts": [ { "map": 12100, "events": [ 42, 15 ] } ]
+    },
+    {
+      "name": "Summer",
+      "start": "08-10",
+      "end": "08-29",
+      "scripts": [ { "map": 11003, "events": [ 63, 18 ] } ]
+    },
+    {
+      "name": "Thanksgiving",
+      "start": "11-26",
+      "end": "12-10",
+      "scripts": [ { "map": 12003, "events": [ 6 ] } ]
+    },
+    {
+      "name": "Double XP Weekend",
+      "days": [ "Saturday", "Sunday" ],
+      "expMultiplier": 2
+    }
+  ],
+  "activities": [
+    { "name": "quiz", "day": "Wednesday", "start": "19:00", "end": "19:30" },
+    { "name": "quiz", "day": "Saturday", "start": "14:00", "end": "14:30" },
+    { "name": "compass", "day": "Tuesday", "start": "19:00", "end": "19:30" },
+    { "name": "treasure", "day": "Monday", "start": "19:00", "end": "21:00" },
+    { "name": "challenge", "day": "Friday", "start": "19:00", "end": "21:00" }
+  ]
+}

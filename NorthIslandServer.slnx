@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NorthIsland.GameData/NorthIsland.GameData.csproj" />
+    <Project Path="src/NorthIsland.Protocol/NorthIsland.Protocol.csproj" />
+    <Project Path="src/NorthIsland.Server/NorthIsland.Server.csproj" />
+  </Folder>
+</Solution>

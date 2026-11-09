@@ -1,0 +1,43 @@
+{
+  "Server": {
+    "Spawn": {
+      "MapId": 10017,
+      "X": 1042,
+      "Y": 1075
+    },
+    "StarterKit": {
+      "Enabled": true,
+      "Equip": [],
+      "Bag": []
+    },
+    "BagSortFirst": [ 34038, 34058, 34128, 36002 ],
+    "NpcSpawnState": 0,
+    "GroundItemRespawnSeconds": 60,
+    "DroppedItemSeconds": 300,
+    "DropScatterPixels": 40,
+    "CompassStreakForLife": 5,
+    "Durability": {
+      "WearPerBattle": 1,
+      "WearMinLevelGap": 19,
+      "GunWearPerBattle": 1,
+      "PestleWearPerBattle": 25
+    },
+    "WorldChatSp": 15,
+    "Guilds": {
+      "AutoDismiss": true,
+      "RecruitDays": 7,
+      "RecruitMembers": 15,
+      "RecruitLevel": 10,
+      "OnlineDays": 15,
+      "OnlineMembers": 3,
+      "SweepMinutes": 10,
+      "MaxGuilds": 0
+    },
+    "HotSpring": {
+      "Enabled": true,
+      "MinutesPerPoint": 3,
+      "MaxPerVisit": 10,
+      "PointsPerStep": 1
+    }
+  }
+}

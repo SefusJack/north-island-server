@@ -1,0 +1,209 @@
+namespace NorthIsland.Server.Features.Battles;
+
+/// <summary>The tunable numbers of battles: encounters, timing, combinations, experience, damage, flee, drops and rewards.</summary>
+public sealed class BattleOptions
+{
+    /// <summary>How many seconds a monster that a player fled from stays hidden on the map.</summary>
+    public int FledMonsterHideSeconds { get; set; } = 10;
+
+    /// <summary>The chance in percent that a step of a free player starts a field fight; 0 turns field fights off.</summary>
+    public int FieldEncounterPercent { get; set; } = 8;
+
+    /// <summary>The seconds after a field fight (and after arriving on a map) before the next field fight can start.</summary>
+    public int FieldEncounterCooldownSeconds { get; set; } = 30;
+
+    /// <summary>How close in pixels a field monster's place or wander box must be to the player to be fought.</summary>
+    public int FieldEncounterRadius { get; set; } = 500;
+
+    /// <summary>A fixed pause in milliseconds between the actions of a round; 0 uses the animation lengths of the skills instead.</summary>
+    public int BattleActionDelayMs { get; set; }
+
+    /// <summary>Extra milliseconds added to the animation time when the server waits for the client to play a combination or knock-off.</summary>
+    public int BattleActionMarginMs { get; set; } = 300;
+
+    /// <summary>Milliseconds the client's battle loop spends drawing per tick, used to estimate how long an action plays.</summary>
+    public int BattleTickDrawMs { get; set; } = 14;
+
+    /// <summary>The display refresh rate in Hz the battle loop waits for per tick; 0 means no wait.</summary>
+    public int BattleTickVerticalBlankHz { get; set; } = 60;
+
+    /// <summary>Milliseconds the camera needs to glide back after an attacker returns to its cell.</summary>
+    public int BattleTickCameraMs { get; set; } = 250;
+
+    /// <summary>Seconds added to the command time before the server plays a round with the commands it has.</summary>
+    public int BattleCommandGraceSeconds { get; set; } = 3;
+
+    /// <summary>The largest difference in turn speed between two fighters that can still join the same combination.</summary>
+    public int ComboSpeedRange { get; set; } = 100;
+
+    /// <summary>The level lead of the attacking side over the target at which a further attacker always joins a combination.</summary>
+    public int ComboFullLevelGap { get; set; } = 25;
+
+    /// <summary>The level lead from which <see cref="ComboHighPercent"/> is the join chance.</summary>
+    public int ComboHighLevelGap { get; set; } = 20;
+
+    /// <summary>The join chance in percent at <see cref="ComboHighLevelGap"/>.</summary>
+    public int ComboHighPercent { get; set; } = 90;
+
+    /// <summary>The level lead from which <see cref="ComboMidPercent"/> is the join chance.</summary>
+    public int ComboMidLevelGap { get; set; } = 15;
+
+    /// <summary>The join chance in percent at <see cref="ComboMidLevelGap"/>.</summary>
+    public int ComboMidPercent { get; set; } = 75;
+
+    /// <summary>The join chance in percent below the mid gap; with the sliding curve, the value the chance starts from.</summary>
+    public int ComboBasePercent { get; set; } = 50;
+
+    /// <summary>How the join chance of a combination depends on the level lead.</summary>
+    public ComboChanceCurve ComboChanceCurve { get; set; }
+
+    /// <summary>Which fighters' levels are averaged for the combination odds.</summary>
+    public ComboOddsLevels ComboOddsLevels { get; set; }
+
+    /// <summary>The levels a fighter counts per rebirth on top of its level for the combination odds.</summary>
+    public int ComboRebornLevelBonus { get; set; } = 99;
+
+    /// <summary>The percent added to the damage of every member of a combination; 0 is the plain sum.</summary>
+    public int ComboDamageBonusPercent { get; set; }
+
+    /// <summary>How many seconds a monster that was beaten stays hidden on the map.</summary>
+    public int DefeatedMonsterHideSeconds { get; set; } = 30;
+
+    /// <summary>How many seconds after a battle a player cannot be drawn into a new fight.</summary>
+    public int BattleImmunitySeconds { get; set; } = 5;
+
+    /// <summary>The base term of the experience a monster pays.</summary>
+    public double MonsterExpBase { get; set; } = 1.5;
+
+    /// <summary>The experience term a monster pays per monster level.</summary>
+    public double MonsterExpPerLevel { get; set; } = 0.5;
+
+    /// <summary>The experience term added per level the monster is above the fighter.</summary>
+    public double ExpPerLevelUnderMonster { get; set; } = 1.2;
+
+    /// <summary>The experience term subtracted per level the monster is below the fighter.</summary>
+    public double ExpPerLevelOverMonster { get; set; } = 0.6;
+
+    /// <summary>The share of a monster's experience a fighter earns for felling it alone.</summary>
+    public double ExpSoloKillFactor { get; set; } = 1.0;
+
+    /// <summary>The share of a monster's experience a fighter earns for felling it in a combination.</summary>
+    public double ExpComboKillFactor { get; set; } = 1.1;
+
+    /// <summary>The share of a monster's experience a fighter earns for hitting it without felling it.</summary>
+    public double ExpHitFactor { get; set; } = 0.5;
+
+    /// <summary>The share added to the experience for each action after the first on a monster.</summary>
+    public double ExpPerExtraAction { get; set; } = 0.25;
+
+    /// <summary>The level lead over a monster up to which its experience is paid in full.</summary>
+    public int LevelGapFullUpTo { get; set; } = 5;
+
+    /// <summary>The level lead over a monster from which no experience is paid.</summary>
+    public int LevelGapZeroFrom { get; set; } = 20;
+
+    /// <summary>The damage factor when the attacker's element overcomes the target's.</summary>
+    public double ElementAdvantageMultiplier { get; set; } = 2.0;
+
+    /// <summary>The damage factor when the target's element overcomes the attacker's.</summary>
+    public double ElementDisadvantageMultiplier { get; set; } = 0.5;
+
+    /// <summary>The experience a win on the Training Island pays when the level gap would leave nothing.</summary>
+    public int TrainingIslandFlatExp { get; set; } = 200;
+
+    /// <summary>True when only the fighters of the felling blow roll a monster's drops, instead of every winner.</summary>
+    public bool DropToKillingBlowOnly { get; set; }
+
+    /// <summary>The highest level that still earns burst experience.</summary>
+    public int BurstMaxLevel { get; set; } = 180;
+
+    /// <summary>The percent of the player's burst experience a burstable pet earns.</summary>
+    public double BurstablePetPercent { get; set; } = 100.0 / 3;
+
+    /// <summary>The percent of the combination damage paid as burst experience for a monster that fell without a debuff.</summary>
+    public double BurstDebuffBasePercent { get; set; } = 35;
+
+    /// <summary>The percent added to that for each distinct debuff the monster carried when it fell.</summary>
+    public double BurstDebuffStepPercent { get; set; } = 15;
+
+    /// <summary>The most debuffs that count towards the burst experience.</summary>
+    public int BurstDebuffSteps { get; set; } = 3;
+
+    /// <summary>The pets that earn burst experience, comma separated Npc names or ids.</summary>
+    public string BurstablePets { get; set; } = "Xaolan, Shasha, Eva, Venus, Qlaya, Sam, Victoria, Magellan, Deadly Flower";
+
+    /// <summary>The skills that add their Skill.dat power to their damage, comma separated ids.</summary>
+    public string PowerDamageSkills { get; set; } = "25067, 15017, 12024";
+
+    /// <summary>The chance in percent that a Fervidity hit puts mess on a target it left standing.</summary>
+    public double FervidityMessPercent { get; set; } = 14;
+
+    /// <summary>The percent more damage a target under Cuss takes.</summary>
+    public double CussDamagePercent { get; set; } = 50;
+
+    /// <summary>The percent more damage a target under Shrink takes.</summary>
+    public double ShrinkDamagePercent { get; set; } = 17;
+
+    /// <summary>The percent more damage a frozen target takes.</summary>
+    public double FreezeDamagePercent { get; set; } = 6.23;
+
+    /// <summary>True to compute hits from the fighters' status window values instead of from the stats.</summary>
+    public bool WindowDamage { get; set; }
+
+    /// <summary>The factor on the window attack for an attack on one target.</summary>
+    public double WindowAttackFactor { get; set; } = 1.4;
+
+    /// <summary>The factor on the window attack for an attack on two targets.</summary>
+    public double WindowAttackFactor2Targets { get; set; } = 0.84;
+
+    /// <summary>The factor on the window attack for an attack on four targets.</summary>
+    public double WindowAttackFactor4Targets { get; set; } = 0.6;
+
+    /// <summary>The factor on the window attack for an attack on three, five or more targets.</summary>
+    public double WindowAttackFactorManyTargets { get; set; } = 0.4;
+
+    /// <summary>Whether the Hot Fire multiplier applies to the attack value or to the finished damage.</summary>
+    public HotFireMode HotFireOn { get; set; }
+
+    /// <summary>The multiplier Hot Fire Attack applies.</summary>
+    public double HotFireMultiplier { get; set; } = 3;
+
+    /// <summary>The most damage one hit can do when <see cref="WindowDamage"/> is on; 0 or less means no cap.</summary>
+    public int MaxDamagePerHit { get; set; } = 65535;
+
+    /// <summary>The percent of their pet's experience a player gets after buffing it.</summary>
+    public double BuffSharePercent { get; set; } = 25;
+
+    /// <summary>The largest product of the seasonal and potion experience multipliers; 0 or less means no cap.</summary>
+    public double ExpMultiplierCap { get; set; } = 10;
+
+    /// <summary>The divisor of the pet's defence the Defence and Spirit Saddles lend the rider.</summary>
+    public int DefenceSaddleDivisor { get; set; } = 3;
+
+    /// <summary>A factor applied to the damage monsters do.</summary>
+    public double MonsterDamageScale { get; set; } = 1;
+
+    /// <summary>The base chance in percent that a flee attempt succeeds.</summary>
+    public int FleeChancePercent { get; set; } = 70;
+
+    /// <summary>How strongly the speed lead changes the flee chance factor.</summary>
+    public double FleeSpeedWeight { get; set; }
+
+    /// <summary>How much each level above the enemies' average changes the flee chance factor.</summary>
+    public double FleeLevelStep { get; set; }
+
+    /// <summary>The lowest factor applied to <see cref="FleeChancePercent"/>.</summary>
+    public double FleeFactorMin { get; set; }
+
+    /// <summary>The highest factor applied to <see cref="FleeChancePercent"/>.</summary>
+    public double FleeFactorMax { get; set; }
+
+    /// <summary>The percent of the current level's experience a player loses when they end a battle down; 0 means no loss.</summary>
+    public int DefeatExpLossPercent { get; set; } = 10;
+
+    /// <summary>The chance in percent that a defeated monster drops one item of its item list.</summary>
+    public int MonsterDropChancePercent { get; set; } = 30;
+
+    /// <summary>True when winning a battle also pays gold.</summary>
+    public bool MonsterGoldRewards { get; set; }
+}

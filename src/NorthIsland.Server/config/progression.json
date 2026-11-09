@@ -1,0 +1,22 @@
+{
+  "Server": {
+    "MonsterExpBase": 1.5,
+    "MonsterExpPerLevel": 0.5,
+    "ExpPerLevelUnderMonster": 1.2,
+    "ExpPerLevelOverMonster": 0.6,
+    "ExpSoloKillFactor": 1.0,
+    "ExpComboKillFactor": 1.1,
+    "ExpHitFactor": 0.5,
+    "ExpPerExtraAction": 0.25,
+    "LevelGapFullUpTo": 5,
+    "LevelGapZeroFrom": 20,
+    "TrainingIslandFlatExp": 200,
+    "PetDefeatAmityLoss": 1,
+    "PetDefeatExpLossPercent": 10,
+    "PetAmityPerLevel": 1,
+    "PetRunAwayAmity": 20,
+    "PetRunAwayChancePercent": 50,
+    "PetStatsPerLevel": 1,
+    "PetBonusStatsPerLevel": 2
+  }
+}
