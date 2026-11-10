@@ -141,6 +141,26 @@ public static class BattleFormulas
     public static double DefenceTerm(double attack, double defence) =>
         attack >= defence ? 0.98 * defence : 0.98 * attack + 0.179 * (defence - attack);
 
+    /// <summary>Finds the level at which a fighter knows a skill.</summary>
+    /// <param name="attacker">The fighter.</param>
+    /// <param name="skillId">The skill id.</param>
+    /// <returns>The level of the player's or pet's skill, at least 1; always 1 for a monster, a map NPC and a player's role skill.</returns>
+    public static int SkillLevelOf(Fighter attacker, ushort skillId)
+    {
+        if (attacker.OwnedPet is not { } pet)
+            return Math.Max(1, (int)(attacker.Session?.ActiveCharacter?.Skill(skillId)?.Level ?? 1));
+        var slot = attacker.Npc is { } npc ? npc.SkillSlots.TakeWhile(s => s != skillId).Count() : int.MaxValue;
+        return Math.Max(1, (int)pet.SkillLevels.ElementAtOrDefault(slot));
+    }
+
+    /// <summary>Works out what a skill adds to the attack: its Skill.dat power at level 1, growing by the same amount with each level.</summary>
+    /// <param name="skill">The skill, or null for a hand attack.</param>
+    /// <param name="level">The level of the skill.</param>
+    /// <param name="o">The battle options.</param>
+    /// <returns>The power; 0 for a hand attack and the other normal attacks.</returns>
+    public static double SkillPower(SkillRecord? skill, int level, BattleOptions o) =>
+        skill is null || SkillTable.IsNormalAttack(skill.Id) ? 0 : skill.Power * (1 + Math.Max(0, o.SkillPowerPerLevel) * Math.Max(0, level - 1));
+
     /// <summary>Rolls the damage of a hit from the fighters' window values (the attack and defence shown in the client's status window).</summary>
     /// <param name="attacker">The attacking fighter.</param>
     /// <param name="target">The fighter hit.</param>
@@ -159,7 +179,7 @@ public static class BattleFormulas
     {
         var magic = skill is { Type: 2 };
         var tripled = StatusRules.IsHotFire(attacker) ? Math.Max(0, o.HotFireMultiplier) : 1;
-        var power = skill is null || SkillTable.IsNormalAttack(skill.Id) ? 0 : skill.Power;
+        var power = SkillPower(skill, skill is null ? 1 : SkillLevelOf(attacker, skill.Id), o);
         double attack = (magic ? attacker.WindowMagicAttack : attacker.WindowAttack)
             * (o.HotFireOn == HotFireMode.Attack ? tripled : 1)
             * TargetCountFactor(targets, o)

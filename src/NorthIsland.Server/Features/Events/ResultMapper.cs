@@ -26,6 +26,12 @@ public static class ResultMapper
                     Description: $"gold {(r.Value < 0 ? "-" : "+")}{Math.Abs(r.Value)}");
             case 1 when r.SubKind == 1 && r.Arg1 == 5: // 1/1/5: give experience
                 return new MappedResult(ResultAction.Exp, Description: $"exp +{r.Value}", Service: r.Value);
+            case 1 when r.SubKind == 1 && r.Arg1 == 6: // 1/1/6: the resource of a gathering spot of kind Arg2 and tier Value
+                return new MappedResult(ResultAction.Gather, Description: $"gather kind {r.Arg2} tier {r.Value}", Service: r.Arg2, Convey: r.Value);
+            case 11 when r.Arg1 == 1 && r.SubKind != 0: // 11/s/1: learn skill SubKind
+                return new MappedResult(ResultAction.LearnSkill, Description: $"learn skill {r.SubKind}", Service: r.SubKind);
+            case 14 when r.Arg1 == 1: // 14/s/1: start script cooldown SubKind for Value seconds
+                return new MappedResult(ResultAction.Cooldown, Description: $"cooldown {r.SubKind} for {r.Value} s", Service: r.SubKind, Convey: r.Value);
             case 1 when r.SubKind == 7 && r.Arg1 is >= 1 and <= 255: // 1/7: the player plays action Arg1
                 return new MappedResult(ResultAction.PlayerAction, Description: $"player action {r.Arg1}", Service: r.Arg1);
             case 1 when r.SubKind == 8 && r.Arg1 == 2: // 1/8/2: charge a hire tier

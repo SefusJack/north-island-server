@@ -8,34 +8,6 @@ namespace NorthIsland.Server.Features.Events;
 public sealed partial class EventEngine
 {
     /// <summary>
-    /// Starts the event of a mine the player stepped on, but only when one of its condition groups starts a battle and holds.
-    /// </summary>
-    /// <param name="session">The player's session.</param>
-    /// <param name="mine">The mine that was stepped on.</param>
-    /// <returns>True when an event run started; false when the mine would start no battle.</returns>
-    public bool StartMine(GameSession session, EveMine mine)
-    {
-        var character = session.ActiveCharacter!;
-        if (maps.Scene(character.MapId) is not { } scene)
-            return false;
-        var run = NewRun(
-            session,
-            character,
-            TriggerArea,
-            mine.Index,
-            MineEncounters.SourcePrefix + mine.Index.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        foreach (var ev in scene.EventsOf(mine))
-            foreach (var group in ConditionEvaluator.Groups(ev))
-                run.Groups.Enqueue(group);
-        if (!run.Groups.Any(g => g.Results.Any(r => r.Kind == 4 && r.SubKind == 1) && ConditionEvaluator.Holds(g, character, run, NullLogger.Instance)))
-            return false;
-        logger.LogInformation("[{Session}] {Name} steps on mine {Mine} on map {Map}", session.Id, character.Name, mine.Index, character.MapId);
-        session.Event = run;
-        Advance(session);
-        return true;
-    }
-
-    /// <summary>
     /// Picks a random fight for a field encounter from the field-monster events of the monsters met, and sends the battle to the client.
     /// </summary>
     /// <param name="session">The player's session.</param>

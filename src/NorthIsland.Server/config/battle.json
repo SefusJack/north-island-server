@@ -34,6 +34,7 @@
     "ShrinkDamagePercent": 17,
     "FreezeDamagePercent": 6.23,
     "WindowDamage": true,
+    "SkillPowerPerLevel": 0.412,
     "HotFireOn": "Attack",
     "HotFireMultiplier": 3,
     "MaxDamagePerHit": 65535,

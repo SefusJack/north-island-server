@@ -17,7 +17,6 @@ namespace NorthIsland.Server.World;
 /// <param name="tents">The tent handlers.</param>
 /// <param name="castles">The castle registry.</param>
 /// <param name="marks">The mark data, for the castle reward flag.</param>
-/// <param name="mines">The mine encounters, started by walking.</param>
 /// <param name="fields">The field encounters, started by walking.</param>
 /// <param name="gm">The GM commands, tried on every chat line.</param>
 /// <param name="options">The world options.</param>
@@ -32,7 +31,6 @@ public sealed class WorldHandlers(
     TentHandlers tents,
     CastleRegistry castles,
     MarkData marks,
-    MineEncounters mines,
     FieldEncounters fields,
     GmCommands gm,
     IOptions<WorldOptions> options,
@@ -86,7 +84,7 @@ public sealed class WorldHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Handles a walk: checks the walk byte, stores the new position and facing, tells the world and lets mines and fields react.</summary>
+    /// <summary>Handles a walk: checks the walk byte, stores the new position and facing, tells the world and lets fields react.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
     internal ValueTask OnWalk(GameSession session, ReadOnlyMemory<byte> body)
@@ -100,12 +98,10 @@ public sealed class WorldHandlers(
         if (walk.Check != expected)
             logger.LogWarning("[{Session}] walk check byte {Actual}, expected {Expected}", session.Id, walk.Check, expected);
 
-        var (fromX, fromY) = (character.X, character.Y);
         character.X = walk.X;
         character.Y = walk.Y;
         session.Facing = walk.Direction;
         world.Walk(session, walk.Direction, walk.X, walk.Y);
-        mines.OnWalk(session, fromX, fromY);
         if (session.Event is null)
             fields.OnWalk(session);
         return ValueTask.CompletedTask;

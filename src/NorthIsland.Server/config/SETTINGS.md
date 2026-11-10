@@ -40,6 +40,7 @@ The keys below are in the `Server` section unless they name another one. The sec
 | `ShrinkDamagePercent` | The percent more damage a target under Shrink takes |
 | `FreezeDamagePercent` | The percent more damage a frozen target takes |
 | `WindowDamage` | True to compute hits from the fighters' status window values instead of from the stats |
+| `SkillPowerPerLevel` | How much of a skill's power it gains with each level above 1 when WindowDamage is on: 0.412 makes level 18 eight times level 1; 0 means the level changes nothing |
 | `HotFireOn` | Whether the Hot Fire multiplier applies to the attack value (Attack) or to the finished damage (Damage) |
 | `HotFireMultiplier` | The multiplier Hot Fire Attack applies |
 | `MaxDamagePerHit` | The most damage one hit can do when WindowDamage is on; 0 or less means no cap |
@@ -102,6 +103,7 @@ The keys below are in the `Server` section unless they name another one. The sec
 | `DroppedItemSeconds` | The seconds a dropped item stays on the ground |
 | `DropScatterPixels` | How far in pixels, on each axis, a dropped item or gold can land from the player; 0 drops it at their feet |
 | `CompassStreakForLife` | The right answers in a row that give a Golden Compass player a life back; 0 or less turns it off |
+| `LifeSkillExp` | The skill experience a life skill gains per use: an item gathered, a fish caught, or a compound that makes an item |
 | `Durability` | Equipment wear settings |
 | `Durability.WearPerBattle` | The wear added to each worn piece after a battle that wears gear; 0 switches wear off |
 | `Durability.WearMinLevelGap` | How many levels the highest monster must be above the player for a battle to wear gear; 0 or less makes every battle wear |

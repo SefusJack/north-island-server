@@ -10,11 +10,13 @@ namespace NorthIsland.Server.Features.Activities;
 /// <summary>Starts and stops the fishing loop of a player and puts the catches in the bag.</summary>
 /// <param name="world">The world state, used to broadcast the start and stop.</param>
 /// <param name="items">The item records.</param>
+/// <param name="lifeSkills">The life skills, trained by each catch.</param>
 /// <param name="options">The activity options giving the attempt interval and catch chance.</param>
 /// <param name="logger">Logger for the fishing messages.</param>
 public sealed class FishingHandlers(
     WorldState world,
     ItemData items,
+    LifeSkills lifeSkills,
     IOptions<ActivityOptions> options,
     ILogger<FishingHandlers> logger)
 {
@@ -103,7 +105,9 @@ public sealed class FishingHandlers(
                 await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, options.Value.FishingSeconds)), token).ConfigureAwait(false);
                 if (session.ActiveCharacter is not { } character || GameRandom.Shared.Next(100) >= options.Value.FishingCatchPercent)
                     continue;
-                var catchId = Pick(kind, GameRandom.Shared);
+                var maxRank = MaxCatchRank(kind, LifeSkills.FishingLevel(character));
+                var catchId = Pick(kind, GameRandom.Shared, id => items[id] is { } item && item.ShopColumn <= maxRank);
+                lifeSkills.TrainFishing(session); // a catch trains the skill even when the bag is full
                 if (items[catchId] is null || Bag.Add(character, items, catchId, 1).Count == 0)
                 {
                     logger.LogInformation("[{Session}] {Name}: a fish bit but the bag is full", session.Id, character.Name);
@@ -121,15 +125,28 @@ public sealed class FishingHandlers(
         }
     }
 
+    /// <summary>Works out the highest item rank a fishing tool can catch at a fishing skill level.</summary>
+    /// <param name="kind">The tool kind: 1 Simple, 2 Great, 3 and up Luxury.</param>
+    /// <param name="level">The fishing skill level.</param>
+    /// <returns>The highest rank: the Simple tool reaches 6 at level 6, the Great tool 8 at level 6, and the Luxury tool 10 at level 4.</returns>
+    public static int MaxCatchRank(byte kind, int level) => kind switch
+    {
+        <= 1 => Math.Min(6, level),
+        2 => Math.Min(8, level + 2),
+        _ => level switch { <= 1 => 5, 2 => 6, 3 => 7, _ => 10 },
+    };
+
     /// <summary>Picks one item of <see cref="Catches"/> at random by the weights of a tool kind.</summary>
     /// <param name="kind">The tool kind, 1 to 3; others are clamped.</param>
     /// <param name="rng">The random source.</param>
+    /// <param name="allowed">Tells which items can be caught; null allows them all.</param>
     /// <returns>The item id.</returns>
-    public static ushort Pick(byte kind, Random rng)
+    public static ushort Pick(byte kind, Random rng, Func<ushort, bool>? allowed = null)
     {
         var column = Math.Clamp(kind - 1, 0, 2);
-        var roll = rng.Next(Catches.Sum(c => c.Weights[column]));
-        foreach (var (itemId, weights) in Catches)
+        var open = Catches.Where(c => allowed is null || allowed(c.ItemId)).ToList();
+        var roll = rng.Next(open.Sum(c => c.Weights[column]));
+        foreach (var (itemId, weights) in open)
         {
             roll -= weights[column];
             if (roll < 0)

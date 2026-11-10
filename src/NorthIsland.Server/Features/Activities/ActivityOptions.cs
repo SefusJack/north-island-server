@@ -17,4 +17,7 @@ public sealed class ActivityOptions
 
     /// <summary>Percent chance that an attempt catches something.</summary>
     public int FishingCatchPercent { get; set; } = 50;
+
+    /// <summary>The skill experience a life skill gains each time it is used.</summary>
+    public int LifeSkillExp { get; set; } = 1;
 }

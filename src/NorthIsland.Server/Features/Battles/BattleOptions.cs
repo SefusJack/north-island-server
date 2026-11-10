@@ -150,6 +150,9 @@ public sealed class BattleOptions
     /// <summary>True to compute hits from the fighters' status window values instead of from the stats.</summary>
     public bool WindowDamage { get; set; }
 
+    /// <summary>How much of a skill's Skill.dat power it gains with each level above 1 when WindowDamage is on; 0 means the level changes nothing.</summary>
+    public double SkillPowerPerLevel { get; set; } = 0.412;
+
     /// <summary>The factor on the window attack for an attack on one target.</summary>
     public double WindowAttackFactor { get; set; } = 1.4;
 

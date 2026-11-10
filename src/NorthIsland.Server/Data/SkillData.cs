@@ -12,6 +12,9 @@ namespace NorthIsland.Server.Data;
 /// </summary>
 public sealed class SkillData
 {
+    /// <summary>The skill type of the life skills (gathering, facture, fishing and alchemy).</summary>
+    public const byte LifeSkillType = 13;
+
     /// <summary>The skill table, or null when Skill.dat is missing; loaded on first access.</summary>
     private readonly Lazy<SkillTable?> _table;
 
@@ -190,7 +193,7 @@ public sealed class SkillData
     /// <returns>The result, or null when the skill is not trainable, not known, or nothing changed.</returns>
     public SkillTraining? Train(Character c, FormulaTable f, ushort skillId, int gain)
     {
-        if (this[skillId] is not { Tree: >= 1 and <= 4 } skill || c.Skill(skillId) is not { } learned)
+        if (this[skillId] is not { } skill || skill is not ({ Tree: >= 1 and <= 4 } or { Type: LifeSkillType }) || c.Skill(skillId) is not { } learned)
             return null;
         var (exp, level) = Grow(f, learned.Exp, learned.Level, gain, skill.MaxLevel);
         if (exp == learned.Exp && level == learned.Level)

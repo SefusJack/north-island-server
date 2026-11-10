@@ -143,6 +143,12 @@ public static class ConditionEvaluator
             case 15 when c.SubKind == 1: // 15/1: free bag places compared
                 return Compare(BagItem.LastSlot - character.Bag.Count, c.Arg3, c.Value);
 
+            case 14 when c.Arg1 is 1 or 2: // 14: script cooldown SubKind is running (Arg1 1) or not (2)
+                return character.CooldownRunning(c.SubKind, GameClock.UtcNow) == (c.Arg1 == 1);
+
+            case 10 when c.Arg1 == 1: // 10: the level of skill SubKind compared; a skill not known counts as level 0
+                return Compare(character.Skill(c.SubKind)?.Level ?? 0, c.Arg3, c.Value);
+
             default: // unimplemented kind: logged, counts as false
                 logger.LogDebug("{Source}: condition {Kind}/{SubKind}/{Arg1} not implemented, treated as false", run.Source, c.Kind, c.SubKind, c.Arg1);
                 return false;
@@ -163,6 +169,8 @@ public static class ConditionEvaluator
         9 => c.SubKind == 2 && c.Arg1 is >= 1 and <= 3, // kind 9: sub kind 2, arguments 1 to 3
         13 => c.SubKind is 1 or 4, // kind 13: sub kinds 1 and 4
         15 => c.SubKind == 1, // kind 15: sub kind 1
+        14 => c.Arg1 is 1 or 2, // kind 14: arguments 1 and 2
+        10 => c.Arg1 == 1, // kind 10: argument 1
         3 => c.Arg1 == 3, // kind 3: argument 3
         4 => c.SubKind == 1 && c.Arg1 is 1 or 2, // kind 4: sub kind 1, arguments 1 and 2
         19 => c.Arg1 is 1 or 2, // kind 19: arguments 1 and 2

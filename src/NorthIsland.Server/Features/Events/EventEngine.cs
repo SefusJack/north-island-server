@@ -32,6 +32,8 @@ namespace NorthIsland.Server.Features.Events;
 /// <param name="guilds">The guild registry.</param>
 /// <param name="calendar">The event calendar.</param>
 /// <param name="combat">The combat stats, resent after a role change.</param>
+/// <param name="skills">The skill data, for the skills scripts teach.</param>
+/// <param name="lifeSkills">The life skills, trained by gathering.</param>
 /// <param name="options">The event options.</param>
 /// <param name="logger">The log.</param>
 public sealed partial class EventEngine(
@@ -58,6 +60,8 @@ public sealed partial class EventEngine(
     GuildRegistry guilds,
     EventCalendar calendar,
     CombatStats combat,
+    SkillData skills,
+    LifeSkills lifeSkills,
     Microsoft.Extensions.Options.IOptions<EventOptions> options,
     ILogger<EventEngine> logger)
 {
@@ -67,7 +71,7 @@ public sealed partial class EventEngine(
     /// <summary>Trigger code (action 20 sub code) for a click on an NPC.</summary>
     public const byte TriggerClick = 1;
 
-    /// <summary>Trigger code (action 20 sub code) for stepping on an area; field encounters and mines also start their runs with it.</summary>
+    /// <summary>Trigger code (action 20 sub code) for stepping on an area; field encounters also start their runs with it.</summary>
     public const byte TriggerArea = 3;
 
     /// <summary>Trigger code (action 20 sub code) for a click on a door.</summary>
@@ -484,6 +488,35 @@ public sealed partial class EventEngine(
                 case ResultAction.Exp: // give experience
                     experience.Gain(session, mapped.Service);
                     logger.LogInformation("[{Session}] {Source}: {What} (now {Exp})", session.Id, run.Source, mapped.Description, character.Exp);
+                    break;
+
+                case ResultAction.Gather when character.Skill(GatherPools.SkillFor(mapped.Service)) is null: // no skill: nothing here, and no cooldown starts
+                    logger.LogInformation("[{Session}] {Source}: {What}: the skill is missing", session.Id, run.Source, mapped.Description);
+                    run.Pending.Clear();
+                    run.Groups.Clear();
+                    SendRecord(session, run, new EventResult(1, 7, 0, 1, 0, NothingToCollectTalk)); // 7 Mode
+                    return;
+
+                case ResultAction.Gather: // the resource of a gathering spot, which also trains its skill
+                    if (PickGather(session, run, mapped) is { } resource)
+                    {
+                        var collected = ApplyItem(session, character, run, resource);
+                        if (collected > 0)
+                        {
+                            lifeSkills.Train(session, GatherPools.SkillFor(mapped.Service));
+                            SendRecord(session, run, resource.Wire with { Value = collected });
+                            return;
+                        }
+                    }
+                    break;
+
+                case ResultAction.LearnSkill: // teach the player a skill
+                    LearnSkill(session, character, run, (ushort)mapped.Service);
+                    break;
+
+                case ResultAction.Cooldown: // start a script cooldown
+                    character.StartCooldown((ushort)mapped.Service, GameClock.UtcNow, mapped.Convey);
+                    logger.LogInformation("[{Session}] {Source}: {What}", session.Id, run.Source, mapped.Description);
                     break;
 
                 case ResultAction.Mark: // change a quest mark; pay its stars when the quest is finished

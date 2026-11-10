@@ -228,6 +228,25 @@ public sealed class Character
     /// <returns>The mark's count, 1 for a set flag mark, otherwise 0.</returns>
     public int MarkCount(ushort id) => Marks.Find(m => m.Id == id)?.Count ?? (MarkFlags.Contains(id) ? 1 : 0);
 
+    /// <summary>The cooldowns game scripts started for the character.</summary>
+    public List<ScriptCooldown> ScriptCooldowns { get; set; } = [];
+
+    /// <summary>Tells whether a script cooldown is still running.</summary>
+    /// <param name="id">The cooldown id.</param>
+    /// <param name="now">The current time (UTC).</param>
+    /// <returns>True while the cooldown runs.</returns>
+    public bool CooldownRunning(ushort id, DateTime now) => ScriptCooldowns.Exists(c => c.Id == id && c.UntilUtc > now);
+
+    /// <summary>Starts a script cooldown, replacing one with the same id and dropping those that have ended.</summary>
+    /// <param name="id">The cooldown id.</param>
+    /// <param name="now">The current time (UTC).</param>
+    /// <param name="seconds">How long it runs.</param>
+    public void StartCooldown(ushort id, DateTime now, int seconds)
+    {
+        ScriptCooldowns.RemoveAll(c => c.Id == id || c.UntilUtc <= now);
+        ScriptCooldowns.Add(new ScriptCooldown { Id = id, UntilUtc = now.AddSeconds(seconds) });
+    }
+
     /// <summary>The timed effects running on the character.</summary>
     public List<TimedEffect> Effects { get; set; } = [];
 

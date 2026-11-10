@@ -14,8 +14,9 @@
     "NpcSpawnState": 0,
     "GroundItemRespawnSeconds": 60,
     "DroppedItemSeconds": 300,
-    "DropScatterPixels": 40,
+    "DropScatterPixels": 60,
     "CompassStreakForLife": 5,
+    "LifeSkillExp": 1,
     "Durability": {
       "WearPerBattle": 1,
       "WearMinLevelGap": 19,

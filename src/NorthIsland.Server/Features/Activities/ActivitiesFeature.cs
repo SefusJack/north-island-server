@@ -13,6 +13,7 @@ public static class ActivitiesFeature
     public static IServiceCollection AddActivities(this IServiceCollection services, IConfiguration section)
     {
         services.Configure<ActivityOptions>(section);
+        services.AddSingleton<LifeSkills>();
         services.AddSingleton<FishingHandlers>();
         services.AddSingleton<HotSpringHandlers>();
         services.AddSingleton<ActivityHandlers>();

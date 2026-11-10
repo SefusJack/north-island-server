@@ -63,6 +63,15 @@ public enum ResultAction
     /// <summary>Change the player's role.</summary>
     RoleChange,
 
+    /// <summary>Roll the resource of a gathering spot; the kind is in <see cref="MappedResult.Service"/>, the tier in <see cref="MappedResult.Convey"/>.</summary>
+    Gather,
+
+    /// <summary>Teach the player the skill in <see cref="MappedResult.Service"/>.</summary>
+    LearnSkill,
+
+    /// <summary>Start the script cooldown in <see cref="MappedResult.Service"/> for the seconds in <see cref="MappedResult.Convey"/>.</summary>
+    Cooldown,
+
     /// <summary>The record has no handler and is skipped.</summary>
     Unsupported,
 }
