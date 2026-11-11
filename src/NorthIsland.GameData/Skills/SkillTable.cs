@@ -116,6 +116,7 @@ public sealed class SkillTable
                 Power = U16(r, 49),
                 PrereqSkillId = U16(r, 54),
                 MaxLevel = U8(r, 105),
+                Areas = [U8(r, 109), U8(r, 110), U8(r, 111), U8(r, 112)], // 109-112 the target area code of each level tier
             });
         }
         return new SkillTable(byId);

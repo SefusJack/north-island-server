@@ -209,6 +209,7 @@ public static class BattleFormulas
     /// <param name="combo">True when the hit is part of a combination attack.</param>
     /// <param name="damageScale">A factor applied to the damage.</param>
     /// <param name="halved">True when the target defended, which halves the damage.</param>
+    /// <param name="targets">The number of targets the attack hits.</param>
     /// <returns>The final damage and whether the hit was a critical hit.</returns>
     public static DamageRoll WindowBlow(
         Fighter attacker,
@@ -218,9 +219,10 @@ public static class BattleFormulas
         BattleOptions o,
         bool combo,
         double damageScale = 1,
-        bool halved = false)
+        bool halved = false,
+        int targets = 1)
     {
-        var hit = WindowHit(attacker, target, rng, skill, o);
+        var hit = WindowHit(attacker, target, rng, skill, o, targets);
         var damage = Scale(hit.Damage, damageScale);
         if (halved)
             damage = Defended(damage);

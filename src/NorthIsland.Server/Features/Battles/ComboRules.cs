@@ -7,8 +7,10 @@ public static class ComboRules
 {
     /// <summary>Tells whether an attack may be part of a combination.</summary>
     /// <param name="skill">The skill used, or null for a plain hand attack.</param>
-    /// <returns>True for a hand attack and for a damage skill aimed at one enemy.</returns>
-    public static bool IsSingleTargetAttack(SkillRecord? skill) => skill is null or { Type: 1 or 2, TargetType: 0 };
+    /// <param name="level">The attacker's level of the skill, which picks its target area.</param>
+    /// <returns>True for a hand attack and for a damage skill aimed at one enemy whose area at that level is the enemy alone.</returns>
+    public static bool IsSingleTargetAttack(SkillRecord? skill, int level) =>
+        skill is null || skill is { Type: 1 or 2, TargetType: 0 } && !Battle.IsSpread(skill.AreaAt(level));
 
     /// <summary>The fighter's level as the combination odds count it, with a bonus per rebirth.</summary>
     /// <param name="f">The fighter.</param>

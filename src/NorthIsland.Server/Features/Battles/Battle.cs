@@ -179,6 +179,34 @@ public sealed class Battle
     public Fighter? At(byte row, byte col) =>
         All.Where(f => f.Row == row && f.Col == col).OrderByDescending(f => f.IsAlive).FirstOrDefault();
 
+    /// <summary>Finds the fighters a skill's target area reaches around the chosen fighter, on the chosen fighter's side.</summary>
+    /// <param name="chosen">The fighter the skill was cast on; always part of the area.</param>
+    /// <param name="area">
+    /// The Skill.dat area code: 2 adds the fighter in the other row of the same column, 3 the fighters above and below in the same row,
+    /// 4 both, 6 and 7 the three columns around the chosen fighter in both rows, 8 every fighter of the side; any other code is the chosen
+    /// fighter alone.
+    /// </param>
+    /// <returns>The chosen fighter, then the living fighters of the other cells of the area.</returns>
+    public List<Fighter> AreaAround(Fighter chosen, byte area)
+    {
+        (int Row, int Col) facing = (chosen.Row is 1 or 3 ? chosen.Row + 1 : chosen.Row - 1, chosen.Col); // rows 1-2 and 3-4 face each other on a side
+        (int Row, int Col)[] cells = area switch
+        {
+            2 => [facing],
+            3 => [(chosen.Row, chosen.Col - 1), (chosen.Row, chosen.Col + 1)],
+            4 => [facing, (chosen.Row, chosen.Col - 1), (chosen.Row, chosen.Col + 1)],
+            6 or 7 => [facing, (chosen.Row, chosen.Col - 1), (chosen.Row, chosen.Col + 1), (facing.Row, chosen.Col - 1), (facing.Row, chosen.Col + 1)],
+            _ => [],
+        };
+        var others = All.Where(f => f.IsAlive && f.Side == chosen.Side && !ReferenceEquals(f, chosen));
+        return [chosen, .. area == 8 ? others : cells.Select(c => others.FirstOrDefault(f => f.Row == c.Row && f.Col == c.Col)).OfType<Fighter>()];
+    }
+
+    /// <summary>Tells whether a Skill.dat area code reaches more than the chosen fighter.</summary>
+    /// <param name="area">The area code.</param>
+    /// <returns>True for the codes <see cref="AreaAround"/> spreads over.</returns>
+    public static bool IsSpread(byte area) => area is 2 or 3 or 4 or 6 or 7 or 8;
+
     /// <summary>Every fighter still present: the players, their pets and the monsters.</summary>
     public IEnumerable<Fighter> All => OwnSide.Concat(Monsters);
 
