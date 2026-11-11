@@ -102,19 +102,23 @@ public sealed class SkillData
         return learned;
     }
 
+    /// <summary>The non-root cells of an element's tree followed by its hidden skills: the skills learned by stats.</summary>
+    /// <param name="element">The element 1-4.</param>
+    /// <returns>The stat-learned skills; empty for any other element.</returns>
+    private static IEnumerable<SkillTreeEntry> StatSkills(int element) =>
+        SkillTree.For(element).Where((_, i) => !IsRootCell(i)).Concat(SkillTree.Hidden(element));
+
     /// <summary>
-    /// Teaches the non-root skills of the character's element whose stat requirements the character now meets.
+    /// Teaches the non-root and hidden skills of the character's element whose stat requirements the character now meets.
     /// </summary>
     /// <param name="c">The character; learned skills are added to it.</param>
     /// <returns>The skills that were learned.</returns>
     public List<SkillRecord> LearnCells(Character c)
     {
         List<SkillRecord> learned = [];
-        var cells = SkillTree.For(c.Element);
-        for (var i = 0; i < cells.Count; i++)
+        foreach (var cell in StatSkills(c.Element))
         {
-            var cell = cells[i];
-            if (IsRootCell(i) || this[cell.SkillId] is not { } skill || KnowsChainOf(c, cell.SkillId)
+            if (this[cell.SkillId] is not { } skill || KnowsChainOf(c, cell.SkillId)
                 || !cell.IsMetBy(c.Strength, c.Constitution, c.Intelligence, c.Wisdom, c.Agility))
                 continue;
             c.Skills.Add(new LearnedSkill { Id = cell.SkillId });
@@ -123,13 +127,13 @@ public sealed class SkillData
         return learned;
     }
 
-    /// <summary>Removes the skills of every cell whose stat requirements the character no longer meets.</summary>
+    /// <summary>Removes the skills of every cell and hidden skill whose stat requirements the character no longer meets.</summary>
     /// <param name="c">The character; forgotten skills are removed from it.</param>
     /// <returns>The ids of the skills that were removed.</returns>
     public List<ushort> ForgetLost(Character c)
     {
         List<ushort> lost = [];
-        foreach (var cell in SkillTree.For(c.Element))
+        foreach (var cell in SkillTree.For(c.Element).Concat(SkillTree.Hidden(c.Element)))
         {
             if (cell.IsMetBy(c.Strength, c.Constitution, c.Intelligence, c.Wisdom, c.Agility))
                 continue;
