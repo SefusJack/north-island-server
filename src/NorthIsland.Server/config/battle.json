@@ -7,6 +7,7 @@
     "BattleTickCameraMs": 250,
     "BattleCommandGraceSeconds": 3,
     "ComboSpeedRange": 100,
+    "ComboJoinRule": "Level",
     "ComboFullLevelGap": 25,
     "ComboHighLevelGap": 20,
     "ComboHighPercent": 90,

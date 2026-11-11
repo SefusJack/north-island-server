@@ -13,7 +13,8 @@ The keys below are in the `Server` section unless they name another one. The sec
 | `BattleTickCameraMs` | Milliseconds the camera needs to glide back after an attacker returns to its cell |
 | `BattleCommandGraceSeconds` | Seconds added to the command time before the server plays a round with the commands it has |
 | `ComboSpeedRange` | The largest difference in turn speed between two fighters that can still join the same combination |
-| `ComboFullLevelGap` | The level lead of the attacking side over the target at which a further attacker always joins a combination |
+| `ComboJoinRule` | What decides whether a further attacker joins a combination: Level (the default; speed plus a roll on the level lead, using the settings below) or Speed (always joins within ComboSpeedRange) |
+| `ComboFullLevelGap` | The level lead of the attacking side over the target at which a further attacker always joins a combination; this and the settings down to ComboRebornLevelBonus apply only with the Level rule |
 | `ComboHighLevelGap` | The level lead from which ComboHighPercent is the join chance |
 | `ComboHighPercent` | The join chance in percent at ComboHighLevelGap |
 | `ComboMidLevelGap` | The level lead from which ComboMidPercent is the join chance |

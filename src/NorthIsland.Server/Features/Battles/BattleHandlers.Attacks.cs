@@ -347,7 +347,7 @@ public sealed partial class BattleHandlers
             if (!fighter.IsAlive || fighter.Left || inCombo.Contains(fighter) || fighter.Side != lead.Attacker.Side
                 || ComboAttackOf(battle, fighter, commands, monsterPlans) is not { } attack || !ReferenceEquals(attack.Target, lead.Target)
                 || !ComboRules.WithinSpeedRange(members[^1].Attacker, fighter, o)
-                || GameRandom.Shared.NextDouble() * 100 >= (o.ComboOddsLevels == ComboOddsLevels.Members
+                || o.ComboJoinRule == ComboJoinRule.Level && GameRandom.Shared.NextDouble() * 100 >= (o.ComboOddsLevels == ComboOddsLevels.Members
                     ? Chance([.. members.Select(m => m.Attacker), fighter])
                     : chance))
                 continue;
@@ -408,11 +408,12 @@ public sealed partial class BattleHandlers
         foreach (var (attacker, skill, gain) in trained)
             TrainSkill(session, attacker, skill, gain);
         logger.LogInformation(
-            "[{Session}] combination of {Count} on {Target} (chance {Chance:0.#} %, average level {Average:0.#})",
+            "[{Session}] combination of {Count} on {Target} ({Rule} rule, chance {Chance:0.#} %, average level {Average:0.#})",
             session.Id,
             records.Count,
             target.Name,
-            chance,
+            o.ComboJoinRule,
+            o.ComboJoinRule == ComboJoinRule.Level ? chance : 100,
             ComboRules.AverageLevel(battle, lead.Attacker.Side, o));
         await ActionPause(played, defends: target.Defending && !lead.Attacker.IsHuman).ConfigureAwait(false);
         BreakSleep(battle, target);

@@ -36,7 +36,10 @@ public sealed class BattleOptions
     /// <summary>The largest difference in turn speed between two fighters that can still join the same combination.</summary>
     public int ComboSpeedRange { get; set; } = 100;
 
-    /// <summary>The level lead of the attacking side over the target at which a further attacker always joins a combination.</summary>
+    /// <summary>What decides whether a further attacker joins a combination: turn speed alone, or speed plus the level odds below.</summary>
+    public ComboJoinRule ComboJoinRule { get; set; }
+
+    /// <summary>The level lead of the attacking side over the target at which a further attacker always joins a combination; used by the level rule only.</summary>
     public int ComboFullLevelGap { get; set; } = 25;
 
     /// <summary>The level lead from which <see cref="ComboHighPercent"/> is the join chance.</summary>
