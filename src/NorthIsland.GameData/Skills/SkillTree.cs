@@ -85,6 +85,34 @@ public static class SkillTree
             11026, 458752, 49, // 11026 Coma Spell
         ]);
 
+    /// <summary>
+    /// The hidden skills of each element: not in any tree cell, learned and forgotten by their stat requirements like the non-root cells.
+    /// </summary>
+    private static readonly ImmutableArray<ImmutableArray<SkillTreeEntry>> HiddenSkills =
+    [
+        [ // 1 Earth
+            new(12018, 0, 0, 114, 9, 0), // 12018 Acrolith Attack
+            new(15066, 1, 12, 58, 58, 30), // 15066 Summon Mosquito
+        ],
+        [ // 2 Water
+            new(12042, 0, 0, 1, 42, 0), // 12042 Free From mess
+            new(12041, 0, 0, 2, 47, 0), // 12041 Sleep
+            new(11053, 0, 0, 1, 53, 0), // 11053 Revival
+            new(15042, 0, 0, 3, 58, 0), // 15042 Recover Normal
+        ],
+        [], // 3 Fire
+        [ // 4 Wind
+            new(15128, 0, 0, 0, 0, 85), // 15128 Shadow Attack
+            new(15120, 50, 0, 0, 0, 103), // 15120 Afterimage Attack
+            new(21401, 65, 0, 0, 0, 124), // 21401 Storm Attack
+        ],
+    ];
+
+    /// <summary>The hidden skills of one element, with the stats they need.</summary>
+    /// <param name="element">The element 1-4.</param>
+    /// <returns>The hidden skills; empty for any other element.</returns>
+    public static IReadOnlyList<SkillTreeEntry> Hidden(int element) => element is >= 1 and <= 4 ? HiddenSkills[element - 1] : [];
+
     /// <summary>The cells of one element's tree.</summary>
     /// <param name="element">The element 1-4.</param>
     /// <returns>The cells in order; empty for any other element.</returns>
