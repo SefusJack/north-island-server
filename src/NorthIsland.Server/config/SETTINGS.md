@@ -12,7 +12,17 @@ The keys below are in the `Server` section unless they name another one. The sec
 | `BattleTickVerticalBlankHz` | The display refresh rate in Hz the battle loop waits for per tick; 0 means no wait |
 | `BattleTickCameraMs` | Milliseconds the camera needs to glide back after an attacker returns to its cell |
 | `BattleCommandGraceSeconds` | Seconds added to the command time before the server plays a round with the commands it has |
-| `ComboSpeedRange` | The largest difference in turn speed between two fighters that can still join the same combination; a fighter within it always joins |
+| `ComboSpeedRange` | The largest difference in turn speed between two fighters that can still join the same combination |
+| `ComboJoinRule` | What decides whether a further attacker joins a combination: Speed (always joins within ComboSpeedRange) or Level (speed plus a roll on the level lead, using the settings below) |
+| `ComboFullLevelGap` | The level lead of the attacking side over the target at which a further attacker always joins a combination; this and the settings down to ComboRebornLevelBonus apply only with the Level rule |
+| `ComboHighLevelGap` | The level lead from which ComboHighPercent is the join chance |
+| `ComboHighPercent` | The join chance in percent at ComboHighLevelGap |
+| `ComboMidLevelGap` | The level lead from which ComboMidPercent is the join chance |
+| `ComboMidPercent` | The join chance in percent at ComboMidLevelGap |
+| `ComboBasePercent` | The join chance in percent below the mid gap; with the sliding curve, the value the chance starts from |
+| `ComboChanceCurve` | How the join chance of a combination depends on the level lead: Steps (fixed bands) or Sliding |
+| `ComboOddsLevels` | Which fighters' levels are averaged for the combination odds: All, Players or Members |
+| `ComboRebornLevelBonus` | The levels a fighter counts per rebirth on top of its level for the combination odds |
 | `ComboDamageBonusPercent` | The percent added to the damage of every member of a combination; 0 is the plain sum |
 | `DefeatedMonsterHideSeconds` | How many seconds a monster that was beaten stays hidden on the map |
 | `BattleImmunitySeconds` | How many seconds after a battle a player cannot be drawn into a new fight |

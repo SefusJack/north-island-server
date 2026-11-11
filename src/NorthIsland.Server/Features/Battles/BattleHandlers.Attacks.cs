@@ -337,13 +337,19 @@ public sealed partial class BattleHandlers
         var o = options.Value;
         if (ComboAttackOf(battle, order[turn], commands, monsterPlans) is not { } lead)
             return null;
+        double Chance(IReadOnlyCollection<Fighter>? joining = null) =>
+            ComboRules.ChancePercent(ComboRules.AverageLevel(battle, lead.Attacker.Side, o, joining), ComboRules.EffectiveLevel(lead.Target, o), o);
+        var chance = Chance();
         List<ComboAttack> members = [lead];
         for (var next = turn + 1; next < order.Count; next++)
         {
             var fighter = order[next];
             if (!fighter.IsAlive || fighter.Left || inCombo.Contains(fighter) || fighter.Side != lead.Attacker.Side
                 || ComboAttackOf(battle, fighter, commands, monsterPlans) is not { } attack || !ReferenceEquals(attack.Target, lead.Target)
-                || !ComboRules.WithinSpeedRange(members[^1].Attacker, fighter, o))
+                || !ComboRules.WithinSpeedRange(members[^1].Attacker, fighter, o)
+                || o.ComboJoinRule == ComboJoinRule.Level && GameRandom.Shared.NextDouble() * 100 >= (o.ComboOddsLevels == ComboOddsLevels.Members
+                    ? Chance([.. members.Select(m => m.Attacker), fighter])
+                    : chance))
                 continue;
             members.Add(attack);
         }
@@ -402,10 +408,13 @@ public sealed partial class BattleHandlers
         foreach (var (attacker, skill, gain) in trained)
             TrainSkill(session, attacker, skill, gain);
         logger.LogInformation(
-            "[{Session}] combination of {Count} on {Target}",
+            "[{Session}] combination of {Count} on {Target} ({Rule} rule, chance {Chance:0.#} %, average level {Average:0.#})",
             session.Id,
             records.Count,
-            target.Name);
+            target.Name,
+            o.ComboJoinRule,
+            o.ComboJoinRule == ComboJoinRule.Level ? chance : 100,
+            ComboRules.AverageLevel(battle, lead.Attacker.Side, o));
         await ActionPause(played, defends: target.Defending && !lead.Attacker.IsHuman).ConfigureAwait(false);
         BreakSleep(battle, target);
         if (!target.IsAlive)
