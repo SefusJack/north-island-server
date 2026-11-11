@@ -6,12 +6,12 @@ namespace NorthIsland.Server.Features.Battles;
 
 public sealed partial class BattleHandlers
 {
-    /// <summary>Plays a support skill (heal, buff, remover, status) from a fighter on a target and sends the action to the battle.</summary>
+    /// <summary>Plays a support skill (heal, buff, remover, status) from a fighter on every fighter of its area and sends the action to the battle.</summary>
     /// <param name="session">The session used for logging and for the skill training.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="player">The fighter who uses the skill.</param>
     /// <param name="skill">The skill used.</param>
-    /// <param name="target">The fighter it is used on.</param>
+    /// <param name="target">The fighter it is used on; the skill's area at the user's level spreads around it.</param>
     private async Task SupportAsync(
         GameSession session,
         Battle battle,
@@ -19,64 +19,62 @@ public sealed partial class BattleHandlers
         SkillRecord skill,
         Fighter target)
     {
-        if (player.IsHuman && !target.IsHuman)
-            target.NoteAction(player);
-        List<FighterValue> values = [];
-        List<ActionTarget> areaTargets = [];
-        var hit = true;
+        var area = battle.AreaAround(target, skill.AreaAt(BattleFormulas.SkillLevelOf(player, skill.Id)));
+        var amount = BattleFormulas.HealAmount(player, skill.Power);
+        List<ActionTarget> hits = [];
+        List<(Fighter Fighter, FighterStatus Status)> removed = [];
+        List<string> whats = [];
         var took = false;
-        var hadEffect = skill.Effect != 0 && target.HasEffect(skill.Effect);
-        List<FighterStatus> removed = [];
-        string what;
-        switch (skill.Type)
+        foreach (var f in area)
         {
-            case 5 or 16: // remover skills (types 5, 16): take off statuses it removes
-                removed = target.Statuses.Where(s => StatusRules.IsRemovedBy(s, skill.Effect)).ToList();
-                target.Statuses.RemoveAll(removed.Contains);
-                what = removed.Count > 0 ? $"removes {string.Join(", ", removed.Select(s => s.Effect))}" : "removes nothing";
-                took = removed.Count > 0;
-                break;
-            case 6 or 7 or 14: // heal skills (types 6, 7, 14): restore SP, HP or both on every fighter of the skill's area
-                var amount = BattleFormulas.HealAmount(player, skill.Power);
-                List<string> healedText = [];
-                foreach (var healed in battle.AreaAround(target, skill.AreaAt(BattleFormulas.SkillLevelOf(player, skill.Id))))
-                {
-                    var (healedValues, hp, sp, healedTook) = Heal(battle, healed, skill, amount);
-                    if (ReferenceEquals(healed, target))
-                        values = healedValues;
-                    else
-                        areaTargets.Add(new ActionTarget(healed.Row, healed.Col, Hit: true, Guard: 0, healedValues));
-                    healedText.Add($"{healed.Name} {hp} HP, {sp} SP");
+            if (player.IsHuman && !f.IsHuman)
+                f.NoteAction(player);
+            List<FighterValue> values = [];
+            var hit = true;
+            string what;
+            switch (skill.Type)
+            {
+                case 5 or 16: // remover skills (types 5, 16): take off statuses it removes
+                    var gone = f.Statuses.Where(s => StatusRules.IsRemovedBy(s, skill.Effect)).ToList();
+                    f.Statuses.RemoveAll(gone.Contains);
+                    removed.AddRange(gone.Select(s => (f, s)));
+                    what = gone.Count > 0 ? $"removes {string.Join(", ", gone.Select(s => s.Effect))}" : "removes nothing";
+                    took |= gone.Count > 0;
+                    break;
+                case 6 or 7 or 14: // heal skills (types 6, 7, 14): restore SP, HP or both
+                    (values, var hp, var sp, var healedTook) = Heal(battle, f, skill, amount);
+                    what = $"restores {hp} HP, {sp} SP";
                     took |= healedTook;
-                }
-                what = $"restores {string.Join("; ", healedText)}";
-                break;
-            default: // other support skills: put a status on the target
-                var attr = StatusRules.AttrFor(skill.Effect, target);
-                if (player.IsHuman && attr != 0)
-                    NoteBurstEffect(player, target, skill.Effect);
-                hit = attr != 0 && !StatusRules.BlockedByDebuff(attr, player, target)
-                    && (target.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
-                if (hit)
-                {
-                    if (skill.Type is 4 or 19 && player.Kind == 2 && target.Kind == 4 && ReferenceEquals(target.Session, player.Session)) // 2 player, 4 pet
-                        player.BuffedPet = true;
-                    AddStatus(battle, target, skill, attr, skill.Effect == StatusRules.Poison ? BattleFormulas.PoisonDamage(target) : 0);
-                    values.Add(new FighterValue(attr, 0, Negative: false));
-                }
-                what = hit ? $"puts status {skill.Effect} on for {Math.Max((byte)1, skill.Duration)} round(s)" : "misses";
-                took = hit && !hadEffect;
-                break;
+                    break;
+                default: // other support skills: put a status on the fighter, each enemy rolling its own hit chance
+                    var hadEffect = skill.Effect != 0 && f.HasEffect(skill.Effect);
+                    var attr = StatusRules.AttrFor(skill.Effect, f);
+                    if (player.IsHuman && attr != 0)
+                        NoteBurstEffect(player, f, skill.Effect);
+                    hit = attr != 0 && !StatusRules.BlockedByDebuff(attr, player, f)
+                        && (f.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
+                    if (hit)
+                    {
+                        if (skill.Type is 4 or 19 && player.Kind == 2 && f.Kind == 4 && ReferenceEquals(f.Session, player.Session)) // 2 player, 4 pet
+                            player.BuffedPet = true;
+                        AddStatus(battle, f, skill, attr, skill.Effect == StatusRules.Poison ? BattleFormulas.PoisonDamage(f) : 0);
+                        values.Add(new FighterValue(attr, 0, Negative: false));
+                    }
+                    what = hit ? $"puts status {skill.Effect} on for {Math.Max((byte)1, skill.Duration)} round(s)" : "misses";
+                    took |= hit && !hadEffect;
+                    break;
+            }
+            hits.Add(new ActionTarget(f.Row, f.Col, hit, Guard: 0, values));
+            whats.Add($"{f.Name} {what}");
         }
-        battle.Send(
-            client => BattleMessages.Action(player.Row, player.Col, skill.Id, [new ActionTarget(target.Row, target.Col, hit, Guard: 0, values), .. areaTargets], client));
+        battle.Send(client => BattleMessages.Action(player.Row, player.Col, skill.Id, hits, client));
         if (took)
             TrainSkill(session, player, skill, target.Level);
-        foreach (var s in removed.Where(s => s.Attr is StatusRules.Debuff2 or 227 or 228))
-            SendStatusRemoval(battle, target, s);
+        foreach (var (f, s) in removed.Where(r => r.Status.Attr is StatusRules.Debuff2 or 227 or 228))
+            SendStatusRemoval(battle, f, s);
         logger.LogInformation("[{Session}] {Player} uses {Skill} ({Cost} SP, {Sp} left) on {Target}: {What}", session.Id, player.Name,
-            skill.Name, skill.SpCost, player.Sp, target.Name, what);
-        await ActionPause(skill.Id, player, target).ConfigureAwait(false);
+            skill.Name, skill.SpCost, player.Sp, target.Name, string.Join("; ", whats));
+        await ActionPause(skill.Id, player, area).ConfigureAwait(false);
     }
 
     /// <summary>Restores a heal skill's SP, HP or both on one fighter, or puts its regeneration on.</summary>
@@ -176,7 +174,7 @@ public sealed partial class BattleHandlers
         }
     }
 
-    /// <summary>Plays the attack of a player or pet: hand attack or damage skill on one enemy.</summary>
+    /// <summary>Plays the attack of a player or pet: hand attack, or damage skill on every enemy of its area.</summary>
     /// <param name="session">The session used for logging and for the skill training.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="player">The fighter who attacks.</param>
@@ -192,25 +190,34 @@ public sealed partial class BattleHandlers
         var target = AttackTargetOf(battle, player, attack);
         if (target is null)
             return;
-        var (damage, critical, missed) = HitTarget(player, target, skill, combo: false);
-        var rider = missed ? null : RiderStatus(battle, player, target, skill);
         var skillId = skill?.Id ?? attack.SkillOrItem;
-        battle.Send(client => BattleMessages.Action(player.Row, player.Col, skillId,
-            [new ActionTarget(target.Row, target.Col, Hit: !missed, Guard: 0, BlowValues(damage, critical, missed, rider))], client));
-        logger.LogInformation("[{Session}] {Player} {How} {Monster} for {Damage}{Critical}{Missed}{Rider} ({Hp}/{Max} HP left)", session.Id, player.Name,
-            skill is null ? "hits" : $"uses {skill.Name} ({skill.SpCost} SP, {player.Sp} left) on",
-            target.Name,
-            damage,
-            critical ? " (critical)" : "",
-            missed ? " (missed)" : "",
-            rider is null ? "" : $" (status {skill!.Effect})", target.Hp, target.MaxHp);
-        TrainSkill(session, player, skill, SkillData.BlowExp(target.Level, target.MaxHp, damage));
-        await ActionPause(skillId, player, target).ConfigureAwait(false);
-        if (!missed)
-            BreakSleep(battle, target);
-
-        if (!target.IsAlive)
-            await KnockOffAsync(battle, target).ConfigureAwait(false);
+        var area = skill is null ? [target] : battle.AreaAround(target, skill.AreaAt(BattleFormulas.SkillLevelOf(player, skill.Id)));
+        List<ActionTarget> hits = [];
+        List<Fighter> landed = [];
+        var gain = 0;
+        foreach (var hit in area)
+        {
+            var (damage, critical, missed) = HitTarget(player, hit, skill, combo: false, area.Count);
+            var rider = missed ? null : RiderStatus(battle, player, hit, skill);
+            hits.Add(new ActionTarget(hit.Row, hit.Col, Hit: !missed, Guard: 0, BlowValues(damage, critical, missed, rider)));
+            if (!missed)
+                landed.Add(hit);
+            gain += SkillData.BlowExp(hit.Level, hit.MaxHp, damage); // each enemy of the area adds its own share
+            logger.LogInformation("[{Session}] {Player} {How} {Monster} for {Damage}{Critical}{Missed}{Rider} ({Hp}/{Max} HP left)", session.Id, player.Name,
+                skill is null ? "hits" : $"uses {skill.Name} ({skill.SpCost} SP, {player.Sp} left) on",
+                hit.Name,
+                damage,
+                critical ? " (critical)" : "",
+                missed ? " (missed)" : "",
+                rider is null ? "" : $" (status {skill!.Effect})", hit.Hp, hit.MaxHp);
+        }
+        battle.Send(client => BattleMessages.Action(player.Row, player.Col, skillId, hits, client));
+        TrainSkill(session, player, skill, gain);
+        await ActionPause(skillId, player, area).ConfigureAwait(false);
+        foreach (var hit in landed)
+            BreakSleep(battle, hit);
+        foreach (var fallen in area.Where(f => !f.IsAlive))
+            await KnockOffAsync(battle, fallen).ConfigureAwait(false);
     }
 
     /// <summary>Finds the enemy an attack command aims at.</summary>
@@ -228,8 +235,9 @@ public sealed partial class BattleHandlers
     /// <param name="target">The fighter hit.</param>
     /// <param name="skill">The skill used, or null for a hand attack.</param>
     /// <param name="combo">True when the blow is part of a combination.</param>
+    /// <param name="targets">The number of enemies the attack hits.</param>
     /// <returns>The damage, whether it was a critical hit, and whether it missed.</returns>
-    private (int Damage, bool Critical, bool Missed) HitTarget(Fighter player, Fighter target, SkillRecord? skill, bool combo)
+    private (int Damage, bool Critical, bool Missed) HitTarget(Fighter player, Fighter target, SkillRecord? skill, bool combo, int targets = 1)
     {
         if (BattleFormulas.IsVoidAgainst(skill, target))
         {
@@ -239,7 +247,7 @@ public sealed partial class BattleHandlers
         int damage;
         bool critical;
         if (options.Value.WindowDamage)
-            (damage, critical) = BattleFormulas.WindowBlow(player, target, GameRandom.Shared, skill, options.Value, combo);
+            (damage, critical) = BattleFormulas.WindowBlow(player, target, GameRandom.Shared, skill, options.Value, combo, targets: targets);
         else
         {
             var power = BattleFormulas.PowerTerm(skill, options.Value);
@@ -477,7 +485,8 @@ public sealed partial class BattleHandlers
                 return null;
             if (SkillTable.IsNormalAttack(command.SkillOrItem) || (fighter.Session is not null && IsPetNormalAttack(fighter, command.SkillOrItem)))
                 return AttackTargetOf(battle, fighter, command) is { } enemy ? new ComboAttack(fighter, enemy, null, command.SkillOrItem) : null;
-            return CastRefusal(battle, fighter, command) is (null, { } skill, { } target) && ComboRules.IsSingleTargetAttack(skill)
+            return CastRefusal(battle, fighter, command) is (null, { } skill, { } target)
+                && ComboRules.IsSingleTargetAttack(skill, BattleFormulas.SkillLevelOf(fighter, skill.Id))
                 ? new ComboAttack(fighter, target, skill, skill.Id)
                 : null;
         }
@@ -487,7 +496,7 @@ public sealed partial class BattleHandlers
                 return null;
             monsterPlans[fighter] = plan = fresh;
         }
-        return plan.SupportTarget is null && ComboRules.IsSingleTargetAttack(plan.Skill)
+        return plan.SupportTarget is null && ComboRules.IsSingleTargetAttack(plan.Skill, plan.Skill is null ? 1 : BattleFormulas.SkillLevelOf(fighter, plan.Skill.Id))
             ? new ComboAttack(fighter, plan.Target, plan.Skill, plan.Skill?.Id ?? SkillTable.HandAttack)
             : null;
     }
@@ -513,19 +522,26 @@ public sealed partial class BattleHandlers
         var skillId = skill?.Id ?? SkillTable.HandAttack;
         if (skill is not null)
             monster.Sp -= skill.SpCost;
-        var (damage, critical) = MonsterBlow(monster, player, skill, combo: false);
-        battle.Send(client => BattleMessages.Action(monster.Row, monster.Col, skillId,
-            [new ActionTarget(player.Row, player.Col, Hit: true, Guard: player.Defending ? (byte)1 : (byte)0,
-                [new FighterValue(BattleMessages.AttrHp, damage, Negative: true, Critical: critical)])], client));
-        logger.LogInformation("[{Session}] {Monster} {How} {Player} for {Damage}{Critical}{Defended} ({Hp}/{Max} HP left)", session.Id, monster.Name,
-            skill is null ? "hits" : $"uses {skill.Name} ({skill.SpCost} SP) on", player.Name, damage, critical ? " (critical)" : "",
-            player.Defending ? " (defending)" : "", player.Hp, player.MaxHp);
-        await ActionPause(skillId, monster, player, defends: player.Defending).ConfigureAwait(false);
-        BreakSleep(battle, player);
-        if (!player.IsAlive)
+        var area = skill is null ? [player] : battle.AreaAround(player, skill.AreaAt(BattleFormulas.SkillLevelOf(monster, skill.Id)));
+        List<ActionTarget> hits = [];
+        foreach (var hit in area)
         {
-            player.Statuses.Clear();
-            logger.LogInformation("[{Session}] {What} {Name} is down", session.Id, player.OwnedPet is null ? "player" : "pet", player.Name);
+            var (damage, critical) = MonsterBlow(monster, hit, skill, combo: false, area.Count);
+            hits.Add(new ActionTarget(hit.Row, hit.Col, Hit: true, Guard: hit.Defending ? (byte)1 : (byte)0,
+                [new FighterValue(BattleMessages.AttrHp, damage, Negative: true, Critical: critical)]));
+            logger.LogInformation("[{Session}] {Monster} {How} {Player} for {Damage}{Critical}{Defended} ({Hp}/{Max} HP left)", session.Id, monster.Name,
+                skill is null ? "hits" : $"uses {skill.Name} ({skill.SpCost} SP) on", hit.Name, damage, critical ? " (critical)" : "",
+                hit.Defending ? " (defending)" : "", hit.Hp, hit.MaxHp);
+        }
+        battle.Send(client => BattleMessages.Action(monster.Row, monster.Col, skillId, hits, client));
+        await ActionPause(skillId, monster, area, defends: area.Exists(f => f.Defending)).ConfigureAwait(false);
+        foreach (var hit in area)
+        {
+            BreakSleep(battle, hit);
+            if (hit.IsAlive)
+                continue;
+            hit.Statuses.Clear();
+            logger.LogInformation("[{Session}] {What} {Name} is down", session.Id, hit.OwnedPet is null ? "player" : "pet", hit.Name);
         }
     }
 
@@ -557,8 +573,9 @@ public sealed partial class BattleHandlers
     /// <param name="player">The player or pet hit.</param>
     /// <param name="skill">The skill used, or null for a hand attack.</param>
     /// <param name="combo">True when the blow is part of a combination.</param>
+    /// <param name="targets">The number of fighters the attack hits.</param>
     /// <returns>The damage and whether it was a critical hit.</returns>
-    private (int Damage, bool Critical) MonsterBlow(Fighter monster, Fighter player, SkillRecord? skill, bool combo)
+    private (int Damage, bool Critical) MonsterBlow(Fighter monster, Fighter player, SkillRecord? skill, bool combo, int targets = 1)
     {
         int raw;
         bool critical;
@@ -571,7 +588,8 @@ public sealed partial class BattleHandlers
                 options.Value,
                 combo,
                 Math.Max(0, options.Value.MonsterDamageScale),
-                player.Defending);
+                player.Defending,
+                targets);
         else
         {
             var (formula, crit) = skill is null

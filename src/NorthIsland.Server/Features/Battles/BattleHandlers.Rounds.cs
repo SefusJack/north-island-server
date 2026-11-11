@@ -241,11 +241,30 @@ public sealed partial class BattleHandlers
         bool defends = false) =>
             ActionPause([(skillId, attacker, target)], numbers, defends);
 
+    /// <summary>Waits for the client to play one action that hits every fighter of a skill's area.</summary>
+    /// <param name="skillId">The skill id of the action.</param>
+    /// <param name="attacker">The acting fighter.</param>
+    /// <param name="targets">The fighters it acts on.</param>
+    /// <param name="numbers">True when damage numbers are shown, which adds to the animation time.</param>
+    /// <param name="defends">True when a target defends, which changes the animation time.</param>
+    private Task ActionPause(
+        ushort skillId,
+        Fighter attacker,
+        List<Fighter> targets,
+        bool numbers = true,
+        bool defends = false) =>
+            ActionPause([.. targets.Select(t => (skillId, attacker, t))], numbers, defends, targets.Count);
+
     /// <summary>Waits for the client to play several actions at once, as in a combination.</summary>
     /// <param name="actions">The skill id, the attacker and the target of each action.</param>
     /// <param name="numbers">True when damage numbers are shown, which adds to the animation time.</param>
     /// <param name="defends">True when the target defends, which changes the animation time.</param>
-    private Task ActionPause(IReadOnlyList<(ushort SkillId, Fighter Attacker, Fighter Target)> actions, bool numbers = true, bool defends = false)
+    /// <param name="hitFighters">How many fighters each action hits; each plays its own reaction.</param>
+    private Task ActionPause(
+        IReadOnlyList<(ushort SkillId, Fighter Attacker, Fighter Target)> actions,
+        bool numbers = true,
+        bool defends = false,
+        int hitFighters = 1)
     {
         if (options.Value.BattleActionDelayMs > 0 || skills.Motions is not { } motions)
             return Pause();
@@ -259,7 +278,7 @@ public sealed partial class BattleHandlers
         foreach (var (skillId, attacker, target) in actions)
         {
             var ms = motions.EstimateActionMs(skillId, new BattleCell(attacker.Row, attacker.Col), new BattleCell(target.Row, target.Col),
-                skills[skillId], numbers, defends, ticks: ticks);
+                skills[skillId], numbers, defends, ticks: ticks, hitFighters: hitFighters);
             lengths.Add(ms);
             logger.LogInformation(
                 "  skill {Skill} ({AttackerRow},{AttackerCol}) -> ({TargetRow},{TargetCol}): animation {Ms} ms",
