@@ -91,10 +91,10 @@ public sealed class QuizHandlers(
         world.Leaving += s => Remove(s, "left the world");
     }
 
-    /// <summary>Loads the questions and prizes from <c>quiz.json</c> next to the program; if that fails only sums are asked.</summary>
+    /// <summary>Loads the questions and prizes from <c>config/quiz.json</c> next to the program; if that fails only sums are asked.</summary>
     private void LoadBank()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "quiz.json");
+        var path = Path.Combine(AppContext.BaseDirectory, SettingsFiles.Folder, "quiz.json");
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));

@@ -67,9 +67,19 @@ public sealed class ServerOptions
     /// <summary>The minutes between autosaves; 0 or less turns them off.</summary>
     public int AutosaveMinutes { get; set; } = 2;
 
-    /// <summary>The file name of the event calendar, looked up in the data directory.</summary>
+    /// <summary>The file name of the event calendar, looked up in the data directory and then in the config folder.</summary>
     public string EventCalendarFile { get; set; } = "events.json";
 
     /// <summary>True to log every packet in both directions.</summary>
     public bool LogPackets { get; set; }
+
+    /// <summary>Account names, separated by commas, that are made GMs when they log in; empty for none.</summary>
+    public string GmAccounts { get; set; } = "";
+
+    /// <summary>Tells whether an account name is listed in <see cref="GmAccounts"/>, ignoring case and spaces.</summary>
+    /// <param name="name">The account name.</param>
+    /// <returns>True when the account is listed.</returns>
+    public bool ListsGm(string name) =>
+        GmAccounts.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(name, StringComparer.OrdinalIgnoreCase);
 }

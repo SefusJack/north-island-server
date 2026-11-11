@@ -60,7 +60,8 @@ public sealed partial class BattleHandlers
                 var attr = StatusRules.AttrFor(skill.Effect, target);
                 if (player.IsHuman && attr != 0)
                     NoteBurstEffect(player, target, skill.Effect);
-                hit = attr != 0 && (target.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
+                hit = attr != 0 && !StatusRules.BlockedByDebuff(attr, player, target)
+                    && (target.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
                 if (hit)
                 {
                     if (skill.Type is 4 or 19 && player.Kind == 2 && target.Kind == 4 && ReferenceEquals(target.Session, player.Session)) // 2 player, 4 pet
@@ -257,7 +258,7 @@ public sealed partial class BattleHandlers
     private FighterValue? RiderStatus(Battle battle, Fighter attacker, Fighter target, SkillRecord? skill)
     {
         if (skill is not { Id: SkillTable.Fervidity } || !target.IsAlive || GameRandom.Shared.NextDouble() * 100 >= options.Value.FervidityMessPercent
-            || StatusRules.AttrFor(skill.Effect, target) is not (> 0 and var attr))
+            || StatusRules.AttrFor(skill.Effect, target) is not (> 0 and var attr) || StatusRules.BlockedByDebuff(attr, attacker, target))
             return null;
         NoteBurstEffect(attacker, target, skill.Effect);
         AddStatus(battle, target, skill, attr, 0);
@@ -587,7 +588,8 @@ public sealed partial class BattleHandlers
             Fighter? target = s.Type switch
             {
                 1 or 2 => null, // damage skills: no support target
-                3 or 15 or 22 => Pick(enemies.Where(f => !f.HasEffect(s.Effect) && StatusRules.AttrFor(s.Effect, f) != 0)), // status skill: player-side target
+                3 or 15 or 22 => Pick(enemies.Where(f => !f.HasEffect(s.Effect) && StatusRules.AttrFor(s.Effect, f) is > 0 and var a
+                    && !StatusRules.BlockedByDebuff(a, monster, f))), // status skill: a player-side target it can land on
                 4 or 19 => s.TargetType == 3
                     ? (monster.HasEffect(s.Effect) ? null : monster)
                     : Pick(allies.Where(m => !m.HasEffect(s.Effect) && StatusRules.AttrFor(s.Effect, m) != 0)), // buff or shield: itself or an ally

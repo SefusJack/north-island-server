@@ -10,14 +10,12 @@ namespace NorthIsland.Server.Features.PetCare;
 /// <summary>Handles the potential pills: raising a character's or a pet's potential, and cancelling a pet's.</summary>
 /// <param name="npcs">The NPC data, to tell pets without a grow key.</param>
 /// <param name="items">The item data, for stacking the returned pills.</param>
-/// <param name="formulas">The formula data, for a pet's HP and SP after a change.</param>
-/// <param name="combat">The combat stats, recalculated after a change to the player.</param>
+/// <param name="combat">The combat stats, recalculated after a change to the player or a pet.</param>
 /// <param name="options">The item options, which hold the chances.</param>
 /// <param name="logger">The logger.</param>
 public sealed class PotentialHandlers(
     NpcData npcs,
     ItemData items,
-    FormulaData formulas,
     CombatStats combat,
     IOptions<ItemOptions> options,
     ILogger<PotentialHandlers> logger)
@@ -149,20 +147,14 @@ public sealed class PotentialHandlers(
             return;
         (pet.Strength, pet.Constitution, pet.Intelligence, pet.Wisdom, pet.Agility) = (Add(pet.Strength), Add(
             pet.Constitution), Add(pet.Intelligence), Add(pet.Wisdom), Add(pet.Agility));
-        if (formulas.Table is { } f)
-        {
-            var total = FormulaTable.TotalLevel(pet.Level, pet.Reborn);
-            pet.MaxHp = f.MaxHp(total, pet.Constitution, 0, 0);
-            pet.MaxSp = f.MaxSp(total, pet.Wisdom, 0, 0);
-            pet.Hp = Math.Min(pet.Hp, pet.MaxHp);
-            pet.Sp = Math.Min(pet.Sp, pet.MaxSp);
-        }
+        combat.RecalculatePet(pet);
         foreach (var (attr, v) in new (byte, int)[]
         {
             (Action8.AttrStr, pet.Strength), (Action8.AttrCon, pet.Constitution), (Action8.AttrInt, pet.Intelligence), (Action8.AttrWis, pet.Wisdom),
             (Action8.AttrAgi, pet.Agility), (Action8.AttrMaxHp, pet.MaxHp), (Action8.AttrMaxSp, pet.MaxSp), (Action8.AttrHp, pet.Hp), (Action8.AttrSp, pet.Sp),
         })
             session.Send(PetMessages.SetAttribute(pet.Slot, attr, v));
+        combat.SendPetValues(session, pet);
     }
 
     /// <summary>Uses up one pill of a stack and tells the client.</summary>

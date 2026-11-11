@@ -15,15 +15,16 @@ public static class PetMessages
     /// <summary>A pet joins the player's team (<c>15/1</c>).</summary>
     /// <param name="ownerId">Id of the owner.</param>
     /// <param name="pet">The pet.</param>
+    /// <param name="worn">An item the pet already wears (a returning team NPC's weapon), which the client puts on it; 0 for none.</param>
     /// <returns>The packet.</returns>
-    public static byte[] Joined(int ownerId, PetInfo pet)
+    public static byte[] Joined(int ownerId, PetInfo pet, ushort worn = 0)
     {
         var w = new PacketWriter(Action15.Code, Action15.PetJoined).I32(ownerId).I32(pet.NpcId).U8(pet.Tradable)
             .U16(pet.Strength).U16(pet.Constitution).U16(pet.Intelligence).U16(pet.Wisdom).U16(pet.Agility)
             .U8(pet.Level).I32(pet.Exp);
         foreach (var (level, exp) in pet.SkillSlots())
             w.U8(level).I32(exp);
-        return w.U8(pet.Amity).U16(0).U8(0).U8(pet.Reborn).U8(pet.Potential).ToArray();
+        return w.U8(pet.Amity).U16(worn).U8(0).U8(pet.Reborn).U8(pet.Potential).ToArray();
     }
 
     /// <summary>Sends the player's pet list (<c>15/8</c>), one record per pet.</summary>

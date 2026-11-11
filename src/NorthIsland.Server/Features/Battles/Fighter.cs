@@ -123,6 +123,9 @@ public sealed class Fighter
     /// <summary>The battle round in which the fighter joined, -1 when it was there from the start.</summary>
     public int JoinedRound { get; set; } = -1;
 
+    /// <summary>The battle round in which the player called a pet into the battle, which used the player's turn; -1 when never.</summary>
+    public int SummonedRound { get; set; } = -1;
+
     /// <summary>True once the fighter has left the battle (fled, disconnected or abandoned it).</summary>
     public bool Left { get; set; }
 

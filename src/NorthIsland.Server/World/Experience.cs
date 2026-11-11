@@ -40,6 +40,7 @@ public sealed class Experience(
             logger.LogInformation("[{Session}] pet {Pet} gains {Exp} exp ({Total} total)", session.Id, pet.Name, exp, pet.Exp);
             return false;
         }
+        combat.RecalculatePet(pet, fill: true);
         foreach (var (attr, value) in new (byte, int)[]
         {
             (Action8.AttrStr, pet.Strength), (Action8.AttrCon, pet.Constitution), (Action8.AttrInt, pet.Intelligence),
@@ -47,6 +48,7 @@ public sealed class Experience(
             (Action8.AttrMaxHp, pet.MaxHp), (Action8.AttrMaxSp, pet.MaxSp), (Action8.AttrHp, pet.Hp), (Action8.AttrSp, pet.Sp),
         })
             session.Send(PetMessages.SetAttribute(pet.Slot, attr, value));
+        combat.SendPetValues(session, pet);
         var amity = (byte)Math.Min(
             Math.Max(pet.Amity, itemOptions.Value.ItemUse.MaxAmity),
             pet.Amity + (pet.Level - levelBefore) * options.Value.PetAmityPerLevel);

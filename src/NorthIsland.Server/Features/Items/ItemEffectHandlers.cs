@@ -436,17 +436,14 @@ public sealed class ItemEffectHandlers(
         Set(forget, -1);
         Set(add, +1);
         Consume(session, c, stack);
-        var total = FormulaTable.TotalLevel(pet.Level, pet.Reborn);
-        pet.MaxHp = f.MaxHp(total, pet.Constitution, 0, 0);
-        pet.MaxSp = f.MaxSp(total, pet.Wisdom, 0, 0);
-        pet.Hp = Math.Min(pet.Hp, pet.MaxHp);
-        pet.Sp = Math.Min(pet.Sp, pet.MaxSp);
+        combat.RecalculatePet(pet);
         foreach (var (attr, v) in new (byte, int)[]
         {
             (Action8.AttrStr, pet.Strength), (Action8.AttrCon, pet.Constitution), (Action8.AttrInt, pet.Intelligence), (Action8.AttrWis, pet.Wisdom),
             (Action8.AttrAgi, pet.Agility), (Action8.AttrMaxHp, pet.MaxHp), (Action8.AttrMaxSp, pet.MaxSp), (Action8.AttrHp, pet.Hp), (Action8.AttrSp, pet.Sp),
         })
             session.Send(PetMessages.SetAttribute(pet.Slot, attr, v));
+        combat.SendPetValues(session, pet);
         logger.LogInformation("[{Session}] {Name}: {Pet} moves a point of ability {Forget} to {Add}", session.Id, c.Name, pet.Name, forget, add);
         return ValueTask.CompletedTask;
     }

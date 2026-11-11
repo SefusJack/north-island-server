@@ -154,11 +154,19 @@ public sealed record ItemRecord
     /// <returns>The total amount, 0 when there is none.</returns>
     public int Effect(byte attr) => Effects.Where(e => e.Attr == attr).Sum(e => e.Amount);
 
+    /// <summary>The sub type of the items that restore HP and SP in full (the Pizzas: "Recovers HP and SP at most").</summary>
+    public const byte FullRestoreSubType = 123;
+
+    /// <summary>The amount given for a full restore, larger than any maximum HP or SP.</summary>
+    public const int FullRestoreAmount = 1_000_000;
+
     /// <summary>The HP (attribute 25) and SP (attribute 26) the item restores, with the amount.</summary>
     public IReadOnlyList<(byte Attr, int Amount)> Restores
     {
         get
         {
+            if (SubType == FullRestoreSubType)
+                return [(25, FullRestoreAmount), (26, FullRestoreAmount)];
             List<(byte, int)> result = [];
             for (var i = 0; i < Math.Min(Words36.Length, Ints42.Length); i++)
             {

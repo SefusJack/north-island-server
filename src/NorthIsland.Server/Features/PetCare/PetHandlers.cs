@@ -11,12 +11,14 @@ namespace NorthIsland.Server.Features.PetCare;
 /// <param name="npcs">The NPC data, for the pets' skill slots.</param>
 /// <param name="skills">The skill data, for learn costs.</param>
 /// <param name="combat">The combat stats, resent when riding changes.</param>
+/// <param name="battles">The battle handlers, which take a pet called into a battle.</param>
 /// <param name="logger">The logger.</param>
 public sealed class PetHandlers(
     World.WorldState world,
     NpcData npcs,
     SkillData skills,
     World.CombatStats combat,
+    BattleHandlers battles,
     ILogger<PetHandlers> logger)
 {
     /// <summary>Mounts a pet, and tells the player and the map.</summary>
@@ -133,6 +135,11 @@ public sealed class PetHandlers(
             return ValueTask.CompletedTask;
         var npcId = BinaryPrimitives.ReadInt32LittleEndian(body.Span);
         var pet = character.Pets.Find(p => p.NpcId == npcId);
+        if (pet is not null && session.Battle is not null)
+        {
+            battles.TrySummonPet(session, character, pet);
+            return ValueTask.CompletedTask;
+        }
         if (pet is null || session.Battle is not null)
         {
             logger.LogWarning("[{Session}] {Name}: pet {Id} cannot join{Why}", session.Id, character.Name, npcId,

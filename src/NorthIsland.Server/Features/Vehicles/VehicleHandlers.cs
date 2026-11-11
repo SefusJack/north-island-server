@@ -42,6 +42,7 @@ public sealed class VehicleHandlers(
             var packet = VehicleMessages.Dismounted(request.BagSlot, id);
             session.Send(packet);
             world.Broadcast(session, packet, sameMapOnly: true);
+            world.ClearPassengers(session);
         }
         else
         {
@@ -117,6 +118,7 @@ public sealed class VehicleHandlers(
         var packet = VehicleMessages.Dismounted(bagSlot, session.Account!.LoginId);
         session.Send(packet);
         world.Broadcast(session, packet, sameMapOnly: true);
+        world.ClearPassengers(session);
         logger.LogInformation("[{Session}] {Name} gets off {Item}", session.Id, session.ActiveCharacter!.Name, request.ItemId);
         return ValueTask.CompletedTask;
     }
@@ -138,6 +140,7 @@ public sealed class VehicleHandlers(
         var off = VehicleMessages.Dismounted(bagSlot, id);
         session.Send(off);
         world.Broadcast(session, off, sameMapOnly: true);
+        world.ClearPassengers(session);
         var wreck = VehicleMessages.Destroyed(id, RobinsonsRaft);
         session.Send(wreck);
         world.Broadcast(session, wreck, sameMapOnly: true);

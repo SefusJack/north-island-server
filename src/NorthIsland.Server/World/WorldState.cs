@@ -75,6 +75,22 @@ public sealed class WorldState(
             leader == id ? "disbands" : "leaves", leader);
     }
 
+    /// <summary>
+    /// Puts down every team member of a player who is not riding a vehicle of their own (15/11 with bag slot 0): a client sets its
+    /// passengers' vehicle state from the driver and clears it only on the driver's 15/11, which it misses when the driver is out of view.
+    /// </summary>
+    /// <param name="session">The player's session, the driver who got off or a member of the team.</param>
+    public void ClearPassengers(GameSession session)
+    {
+        var team = Teams.TeamOf(PlayerId(session));
+        foreach (var memberId in team)
+        {
+            if (SessionOf(memberId) is { Vehicle.Riding: true })
+                continue;
+            SendToMapAndTeam(session, VehicleMessages.Dismounted(0, memberId), team);
+        }
+    }
+
     /// <summary>Sends a packet to a player, everyone on their map and the members of a team, each once.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="packet">The packet to send.</param>

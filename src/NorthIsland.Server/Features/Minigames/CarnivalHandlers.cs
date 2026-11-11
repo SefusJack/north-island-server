@@ -335,6 +335,7 @@ public sealed class CarnivalHandlers(
             if (account.MallPoints < points)
                 return false;
             account.MallPoints -= points;
+            session.Send(MallMessages.Points(account.MallPoints)); // the machine shows the points it was last sent
             return true;
         }
         var token = payKind == 2 ? Carnival.CarnieToken : payKind == 3 ? Carnival.FunToken : (ushort)0;

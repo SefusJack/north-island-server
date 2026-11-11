@@ -44,7 +44,7 @@ public sealed class StallHandlers(
         while (r.Remaining >= 5 && stall.Prices.Count < MaxItems)
         {
             var (slot, price) = (r.U8(), r.I32());
-            if (price > 0 && character.Bag.Exists(b => b.Slot == slot) && session.Vehicle?.BagSlot != slot)
+            if (price > 0 && character.Bag.Find(b => b.Slot == slot) is { } priced && !Bag.IsNoTrade(items, priced) && session.Vehicle?.BagSlot != slot)
                 stall.Prices[slot] = price;
         }
         if (stall.Prices.Count == 0 || stall.Name.Length == 0)

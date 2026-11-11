@@ -110,7 +110,7 @@ public sealed class ExpressHandlers(
         foreach (var (slot, count) in stacks)
         {
             var stack = c.Bag.Find(b => b.Slot == slot);
-            if (stack is null || count == 0 || stack.Count < count)
+            if (stack is null || count == 0 || stack.Count < count || Bag.IsNoTrade(items, stack))
                 return (1, stack?.ItemId ?? 0);
         }
         if (world.SessionOf(targetId) is not { } target || target.ActiveCharacter is not { } tc || targetId == session.Account!.LoginId)

@@ -10,6 +10,7 @@ public sealed class Action35Password(
     public byte Code => Action35.Code;
 
     public void Register(ActionRoutes routes) => routes
-        .On(Action35.ChangePassword, "change password", login.OnChangePassword) // 35/1: change the account password
-        .On(Action35.Delete, "delete character", login.OnDeleteCharacter); // 35/2: delete a character
+        .On(Action35.ChangePassword, "change secret code", login.OnChangePassword) // 35/1: change the character's secret code
+        .On(Action35.Delete, "delete character", login.OnDeleteCharacter) // 35/2: delete a character
+        .On(Action35.ChangeAccountPassword, "change account password", login.OnChangeAccountPassword); // 35/12: change the account password
 }

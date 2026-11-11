@@ -14,12 +14,31 @@ public static class Bag
     /// <summary>The most items one stack holds.</summary>
     public const byte MaxStack = 50;
 
-    /// <summary>Whether items of this kind share a stack: plain items that are not equipment, vehicles, large, timed or bottles.</summary>
+    /// <summary>The items the client never stacks by id: tear pliers, the dog bone, the tent palette, the teleport scroll, the escape button, the time mantle, the stopwatch, the super handbag, the sandglasses and item 34160.</summary>
+    private static readonly HashSet<ushort> SingleItems = [34152, 34155, 34017, 34022, 34160, 34163, 34164, 34168, 34180, 34106, 39074, 39097];
+
+    /// <summary>The item type of vehicles.</summary>
+    private const byte VehicleType = 39;
+
+    /// <summary>
+    /// Whether items of this kind share a stack, by the client's rule (IsStackableItem): not equipment, vehicles, large, slot 9 or
+    /// slot 10 items, timed items, sub type 130, bottles or the single items.
+    /// </summary>
     /// <param name="r">The item's Item.dat record, null for an unknown item.</param>
     /// <returns>True when the item stacks; false for an unknown item.</returns>
     public static bool IsStackable(ItemRecord? r) =>
-        r is not null && !r.IsEquipment && r.EquipSlot is not (7 or 10) && r.CellWidth <= 1 && r.CellHeight <= 1
-            && r.UsePeriod == 0 && r.SubType != 130 && Bottles.KindOf(r) == 0;
+        r is not null && !r.IsEquipment && r.EquipSlot is not (9 or 10) && r.Type != VehicleType && r.CellWidth <= 1 && r.CellHeight <= 1
+            && r.UsePeriod == 0 && r.SubType != 130 && Bottles.KindOf(r) == 0 && !SingleItems.Contains(r.Id);
+
+    /// <summary>The item flag of items that cannot be transferred to another player.</summary>
+    public const byte NoTradeFlag = 2;
+
+    /// <summary>Whether a stack cannot be given to another player: its item has the no-trade flag, or it has a pose (the client's IsTransferableItem).</summary>
+    /// <param name="items">Item.dat, for the flags.</param>
+    /// <param name="stack">The stack.</param>
+    /// <returns>True when the stack must stay with its owner.</returns>
+    public static bool IsNoTrade(ItemData items, BagItem stack) =>
+        stack.Pose != 0 || (items[stack.ItemId] is { } r && (r.Flags & NoTradeFlag) != 0);
 
     /// <summary>Adds up the counts of all stacks of an item in a grid.</summary>
     /// <param name="bag">The bag-like grid (a list of stacks).</param>

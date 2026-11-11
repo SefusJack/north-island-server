@@ -34,13 +34,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="config/battle.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="config/progression.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="config/world.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="config/mall.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="quiz.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="events.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/quiz.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="config/events.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

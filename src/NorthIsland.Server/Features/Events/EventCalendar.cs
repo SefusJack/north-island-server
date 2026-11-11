@@ -95,7 +95,8 @@ public sealed class EventCalendar
     }
 
     /// <summary>
-    /// Reads the calendar file named in the server options, from the data folder or else next to the server, absolute names as they are.
+    /// Reads the calendar file named in the server options, from the data folder or else from the settings folder next to the server, absolute
+    /// names as they are.
     /// A missing or unreadable file gives an empty calendar.
     /// </summary>
     /// <param name="options">The server options.</param>
@@ -110,7 +111,7 @@ public sealed class EventCalendar
             : new[]
             {
                 Path.Combine(ServerPaths.Resolve(options.DataDirectory), options.EventCalendarFile),
-                Path.Combine(AppContext.BaseDirectory, options.EventCalendarFile)
+                Path.Combine(AppContext.BaseDirectory, SettingsFiles.Folder, options.EventCalendarFile)
             };
         foreach (var path in candidates.Where(System.IO.File.Exists))
         {

@@ -3,11 +3,8 @@ namespace NorthIsland.Server.Features.Vehicles;
 /// <summary>Numbers for vehicle fuel, wear and fees.</summary>
 public sealed class VehicleOptions
 {
-    /// <summary>The fuel one fuel item adds.</summary>
-    public int FuelPerItem { get; set; } = 100;
-
-    /// <summary>The most fuel a vehicle holds.</summary>
-    public int FuelMax { get; set; } = 1000;
+    /// <summary>The percent of a vehicle's full tank one fuel item adds (the full tank is the client's fuel bar, as big as the most wear).</summary>
+    public int FuelPercentPerItem { get; set; } = 10;
 
     /// <summary>The fuel a riding vehicle uses per minute; 0 means none.</summary>
     public double FuelPerMinute { get; set; }

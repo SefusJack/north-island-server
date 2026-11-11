@@ -130,9 +130,15 @@ public sealed partial class EventEngine
             }
             pet.LeaseUntil = run.HireTier != 0 ? HireTiers.LeaseEnd(TimedEffects.Now, options.Value.HireLeaseHours) : null;
             character.Pets.Add(pet);
-            session.Send(Protocol.Messages.Player.PetMessages.Joined(session.Account!.LoginId, Pets.Info(pet)));
-            if (Pets.GiveStartingGear(pet, options.Value.TeamNpcEquipment, id => items[id]) || returning is not null)
+            Pets.GiveStartingGear(pet, options.Value.TeamNpcEquipment, id => items[id]);
+            // The join packet carries the weapon: a client that already has the pet ignores it in a later pet list.
+            var weapon = pet.Equipment.Find(e => e.Slot == Gems.WeaponSlot)?.ItemId ?? 0;
+            session.Send(Protocol.Messages.Player.PetMessages.Joined(session.Account!.LoginId, Pets.Info(pet), weapon));
+            if (pet.Equipment.Count > 0)
+            {
                 session.Send(Protocol.Messages.Player.PetMessages.List([Pets.Info(pet)], session.Client));
+                combat.SendPetBonuses(session, pet);
+            }
             logger.LogInformation("[{Session}] {Source}: {Pet} ({Npc}) {What} the team in slot {Slot} (level {Level})", session.Id, run.Source,
                 pet.Name, npcId, returning is null ? "joins" : "rejoins", pet.Slot, pet.Level);
             return;

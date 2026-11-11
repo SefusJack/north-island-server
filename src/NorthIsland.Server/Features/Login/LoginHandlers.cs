@@ -46,7 +46,29 @@ public sealed partial class LoginHandlers(
     private static partial Regex CharacterNamePattern();
 
     /// <summary>
-    /// Changes the active character's secret code and answers with the result: 1 changed, 2 wrong old code, 4 new code shorter than 6 characters.
+    /// Changes the account password and answers 35/12 with the result: 1 changed, 2 wrong old password, 4 new password not 4 to 14 characters.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="body">The packet body after the action and sub code: the old password, then the new one.</param>
+    internal async ValueTask OnChangeAccountPassword(GameSession session, ReadOnlyMemory<byte> body)
+    {
+        if (session.Account is not { } account || body.Length < 2)
+            return;
+        var r = new PacketReader(body.Span);
+        var old = r.PStr8();
+        var fresh = r.Remaining > 0 ? r.PStr8() : "";
+        byte result = !PasswordHasher.Verify(old, account.PasswordHash) ? (byte)2 : fresh.Length is < 4 or > 14 ? (byte)4 : (byte)1;
+        if (result == 1)
+        {
+            account.PasswordHash = PasswordHasher.Hash(fresh);
+            await store.SaveAsync(account).ConfigureAwait(false);
+        }
+        session.Send(new PacketWriter(Action35.Code, Action35.ChangeAccountPassword).U8(result).ToArray());
+        logger.LogInformation("[{Session}] {Name}: change account password -> {Result}", session.Id, account.Name, result);
+    }
+
+    /// <summary>
+    /// Changes the active character's secret code and answers with the result: 1 changed, 3 wrong old code, 4 new code shorter than 6 characters.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -57,7 +79,7 @@ public sealed partial class LoginHandlers(
         var r = new PacketReader(body.Span);
         var old = r.PStr8();
         var fresh = r.Remaining > 0 ? r.PStr8() : "";
-        byte result = !string.IsNullOrEmpty(character.Cipher) && character.Cipher != old ? (byte)2 : fresh.Length < 6 ? (byte)4 : (byte)1;
+        byte result = !string.IsNullOrEmpty(character.Cipher) && character.Cipher != old ? (byte)3 : fresh.Length < 6 ? (byte)4 : (byte)1;
         if (result == 1)
         {
             character.Cipher = fresh;
@@ -178,6 +200,11 @@ public sealed partial class LoginHandlers(
         }
 
         account.LastLoginUtc = GameClock.UtcNow;
+        if (!account.Gm && _options.ListsGm(account.Name))
+        {
+            account.Gm = true;
+            logger.LogInformation("[{Session}] {Name} is made a GM by the GmAccounts setting", session.Id, account.Name);
+        }
         await store.SaveAsync(account).ConfigureAwait(false);
         session.Account = account;
 

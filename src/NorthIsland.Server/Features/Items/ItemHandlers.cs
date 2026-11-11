@@ -381,6 +381,13 @@ public sealed class ItemHandlers(
             logger.LogInformation("[{Session}] pick up: nothing at ground index {Index}", session.Id, index);
             return ValueTask.CompletedTask;
         }
+        if (peek.Owner != 0 && peek.Owner != session.Account!.LoginId)
+        {
+            logger.LogInformation("[{Session}] pick up: {Item} at ground index {Index} cannot be transferred and belongs to {Owner}", session.Id,
+                peek.ItemId, index, peek.Owner);
+            session.Send(new Protocol.IO.PacketWriter(Action23.Code, Action23.CannotPickUp).ToArray());
+            return ValueTask.CompletedTask;
+        }
         if (peek.Gold == 0)
         {
             List<BagItem> trial = [
@@ -426,8 +433,10 @@ public sealed class ItemHandlers(
             session.Send(new PacketWriter(Action23.Code, Action23.DiscardConfirm).U8(1).U8(asked.Slot).U16(asked.ItemId).U8((byte)count).ToArray());
             return ValueTask.CompletedTask;
         }
-        if (TakeStack(session, character, body.Span[0], body.Span[1], "drop") is not { } taken)
+        var noTrade = character.Bag.Find(b => b.Slot == body.Span[0]) is { } dropped && Bag.IsNoTrade(items, dropped);
+        if (TakeStack(session, character, body.Span[0], body.Span[1], "drop") is not { } dropping)
             return ValueTask.CompletedTask;
+        var taken = noTrade ? dropping with { Owner = session.Account!.LoginId } : dropping;
         if (!ground.Drop(session, taken))
         {
             logger.LogWarning("[{Session}] drop: the ground of map {Map} is full, {Item} lost", session.Id, character.MapId, taken.ItemId);
@@ -496,6 +505,16 @@ public sealed class ItemHandlers(
         var (slot, count, petSlot) = (body.Span[0], body.Span[1], body.Span[2]);
         var stack = character.Bag.Find(b => b.Slot == slot);
         var item = stack is null ? null : items[stack.ItemId];
+        if (stack?.ItemId == ItemEffectHandlers.Stopwatch)
+        {
+            // A client without the Stopwatch's own packet (23/110) sends a plain use: pause the double exp, or let it go on when paused.
+            return effects.OnStopwatch(session, new[] { character.ExpPausedSince is null ? stack.Slot : (byte)0 });
+        }
+        if (stack is not null && item is not null && GiftBoxContent(item) is var content and not 0)
+        {
+            OpenGiftBox(session, character, stack, item, content);
+            return ValueTask.CompletedTask;
+        }
         if (stack is not null && item is not null && effects.TryUse(session, character, stack, item, petSlot))
             return ValueTask.CompletedTask;
         var pet = petSlot == 0 ? null : character.Pets.Find(p => p.Slot == petSlot);
@@ -543,6 +562,44 @@ public sealed class ItemHandlers(
         logger.LogInformation("[{Session}] {Name} uses {Item} ({ItemName}) x{Count}: HP {Hp}/{MaxHp}, SP {Sp}/{MaxSp}", session.Id,
             character.Name, item.Id, item.Name, uses, character.Hp, character.MaxHp, character.Sp, character.MaxSp);
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The item type of gift boxes, which hold the item their alias names (the client's GetItemGiftBoxId).</summary>
+    private const byte GiftBoxType = 17;
+
+    /// <summary>Gets the item a gift box holds.</summary>
+    /// <param name="item">The item used.</param>
+    /// <returns>The item id inside, or 0 when the item is not a gift box.</returns>
+    private static ushort GiftBoxContent(NorthIsland.GameData.Items.ItemRecord item) =>
+        item.Type == GiftBoxType && item.Words429.Length > 1 ? item.Words429[1] : (ushort)0;
+
+    /// <summary>Opens a gift box: takes one box and puts the item it holds in the bag, when it fits.</summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="character">The player's character.</param>
+    /// <param name="stack">The box's bag stack.</param>
+    /// <param name="box">The box's item record.</param>
+    /// <param name="content">The item inside.</param>
+    private void OpenGiftBox(GameSession session, Character character, BagItem stack, NorthIsland.GameData.Items.ItemRecord box, ushort content)
+    {
+        List<BagItem> trial = [
+            .. character.Bag.Where(b => b != stack || b.Count > 1).Select(
+                b => new BagItem
+                {
+                    Slot = b.Slot, ItemId = b.ItemId, Count = b == stack ? (byte)(b.Count - 1) : b.Count, Wear = b.Wear, Fusion = b.Fusion, Pose = b.Pose,
+                    BoxItem = b.BoxItem
+                })
+        ];
+        if (items[content] is null || Bag.Add(trial, items, content, 1).Sum(c => c.Added) != 1)
+        {
+            logger.LogInformation("[{Session}] {Name} opens {Box}: no room for item {Item}", session.Id, character.Name, box.Name, content);
+            session.Send(new PacketWriter(Action23.Code, Action23.CannotPickUp).ToArray());
+            return;
+        }
+        TakeFromBag(character, stack, 1);
+        session.Send(ItemMessages.BagSlotDecrease(stack.Slot, 1));
+        var added = Bag.Add(character, items, content, 1).Sum(c => c.Added);
+        session.Send(GroundMessages.ItemObtained(content, (ushort)added));
+        logger.LogInformation("[{Session}] {Name} opens {Box} and gets {Item}", session.Id, character.Name, box.Name, items[content]?.Name);
     }
 
     /// <summary>Feeds a pet items that restore HP or SP, unless the pet is a quest NPC.</summary>

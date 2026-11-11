@@ -15,7 +15,8 @@ namespace NorthIsland.Server.World;
 public sealed class CombatStats(
     FormulaData formulas,
     ItemData items,
-    Microsoft.Extensions.Options.IOptions<BattleOptions> options)
+    Microsoft.Extensions.Options.IOptions<BattleOptions> options,
+    NpcData? npcs = null)
 {
     /// <summary>The index of SPD in the five-value arrays (ATK, DEF, MATK, MDEF, SPD).</summary>
     public const int SpeedIndex = 4;
@@ -75,13 +76,54 @@ public sealed class CombatStats(
         AttrMaxSpBonus
     ];
 
-    /// <summary>Sends the client the worn-item bonus of each attribute for a pet.</summary>
+    /// <summary>Sends the client the worn-item bonus of each attribute for a pet, and after a change of its worn items its new values.</summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="pet">The pet.</param>
-    public void SendPetBonuses(GameSession session, Pet pet)
+    /// <param name="changed">True when the pet's worn items changed: its maxima and five values are worked out again and sent.</param>
+    public void SendPetBonuses(GameSession session, Pet pet, bool changed = true)
     {
         foreach (var attr in PetBonusAttrs)
             session.Send(PetMessages.SetAttribute((byte)pet.Slot, attr, Bonus(pet.Equipment, attr)));
+        if (!changed)
+            return;
+        var (maxHp, maxSp, hp, sp) = (pet.MaxHp, pet.MaxSp, pet.Hp, pet.Sp);
+        RecalculatePet(pet);
+        if (pet.MaxHp != maxHp)
+            session.Send(PetMessages.SetAttribute((byte)pet.Slot, Action8.AttrMaxHp, pet.MaxHp));
+        if (pet.MaxSp != maxSp)
+            session.Send(PetMessages.SetAttribute((byte)pet.Slot, Action8.AttrMaxSp, pet.MaxSp));
+        if (pet.Hp != hp)
+            session.Send(PetMessages.SetAttribute((byte)pet.Slot, Action8.AttrHp, pet.Hp));
+        if (pet.Sp != sp)
+            session.Send(PetMessages.SetAttribute((byte)pet.Slot, Action8.AttrSp, pet.Sp));
+        SendPetValues(session, pet);
+    }
+
+    /// <summary>
+    /// Works out a pet's max HP and SP from its level, CON / WIS and the max HP / SP bonus of its worn items (the 205 / 206 the
+    /// client shows include the bonus), and keeps HP and SP within them.
+    /// </summary>
+    /// <param name="pet">The pet.</param>
+    /// <param name="fill">True to fill HP and SP up to the new maxima (a level gained).</param>
+    public void RecalculatePet(Pet pet, bool fill = false)
+    {
+        if (formulas.Table is not { } f)
+            return;
+        var total = FormulaTable.TotalLevel(pet.Level, pet.Reborn);
+        pet.MaxHp = f.MaxHp(total, pet.Constitution, Bonus(pet.Equipment, AttrMaxHpBonus), 0);
+        pet.MaxSp = f.MaxSp(total, pet.Wisdom, Bonus(pet.Equipment, AttrMaxSpBonus), 0);
+        pet.Hp = fill ? pet.MaxHp : Math.Min(pet.Hp, pet.MaxHp);
+        pet.Sp = fill ? pet.MaxSp : Math.Min(pet.Sp, pet.MaxSp);
+    }
+
+    /// <summary>Sends a pet's five shown values (ATK, DEF, MATK, MDEF, SPD; 8/2 attributes 41-45), which the client does not work out after a change.</summary>
+    /// <param name="session">The owner's session.</param>
+    /// <param name="pet">The pet.</param>
+    public void SendPetValues(GameSession session, Pet pet)
+    {
+        var values = PetValues(pet);
+        for (var i = 0; i < values.Length; i++)
+            session.Send(PetMessages.SetAttribute((byte)pet.Slot, (byte)(AttrAtk + i), values[i]));
     }
 
     /// <summary>A pet's five values (ATK, DEF, MATK, MDEF, SPD) from its level, stats, worn items and element.</summary>
@@ -93,10 +135,32 @@ public sealed class CombatStats(
             return new int[5];
         var level = FormulaTable.TotalLevel(p.Level, p.Reborn);
         int[] stats = [p.Strength, p.Constitution, p.Intelligence, p.Wisdom, p.Agility];
-        return [
+        int[] values = [
             .. Enumerable.Range(0, 5).Select(i => f.CombatValue(i, level, stats[i], Bonus(p.Equipment, ItemAttrs[i]), ElementMatches(i, p.Element), false))
         ];
+        if (WearsWorkingBrooch(p))
+        {
+            values[0] *= 2;
+            values[2] *= 2;
+        }
+        return values;
     }
+
+    /// <summary>The sub type of the Friendship Brooches: "Double ATK and MATK after equipped by human pets with amity at 100."</summary>
+    public const byte FriendshipBroochSubType = 136;
+
+    /// <summary>The amity a pet needs for the Friendship Brooch to work.</summary>
+    public const int FriendshipBroochAmity = 100;
+
+    /// <summary>The Npc.dat type of human characters (Roca, Sano, Houyi); animal pets are type 7.</summary>
+    public const byte HumanNpcType = 4;
+
+    /// <summary>Whether a pet's Friendship Brooch doubles its ATK and MATK: a human pet at full amity wearing an unbroken brooch.</summary>
+    /// <param name="p">The pet.</param>
+    /// <returns>True when the brooch works.</returns>
+    public bool WearsWorkingBrooch(Pet p) =>
+        p.Amity >= FriendshipBroochAmity && npcs?[p.NpcId] is { Type: HumanNpcType }
+            && p.Equipment.Exists(e => !Durability.IsDestroyed(e.Wear) && items[e.ItemId] is { SubType: FriendshipBroochSubType });
 
     /// <summary>A monster's SPD.</summary>
     /// <param name="npc">The monster's Npc.dat record.</param>
@@ -193,7 +257,7 @@ public sealed class CombatStats(
     {
         if (session.ActiveCharacter is not { } c)
             return;
-        var (hp, sp) = (c.Hp, c.Sp);
+        var (hp, sp, maxHp, maxSp) = (c.Hp, c.Sp, c.MaxHp, c.MaxSp);
         Recalculate(c);
         foreach (var attr in new[]
         {
@@ -206,6 +270,11 @@ public sealed class CombatStats(
             AttrMaxSpBonus
         })
             session.Send(InnMessages.SetAttribute(attr, MaxBonus(c, attr)));
+        // Changed maxima too: a client that does not add the 207 / 208 bonus to the maxima itself shows them only from these.
+        if (c.MaxHp != maxHp)
+            session.Send(InnMessages.SetAttribute(Action8.AttrMaxHp, c.MaxHp));
+        if (c.MaxSp != maxSp)
+            session.Send(InnMessages.SetAttribute(Action8.AttrMaxSp, c.MaxSp));
         if (c.Hp != hp)
             session.Send(InnMessages.SetAttribute(Action8.AttrHp, c.Hp));
         if (c.Sp != sp)

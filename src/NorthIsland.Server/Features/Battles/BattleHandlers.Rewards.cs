@@ -158,28 +158,37 @@ public sealed partial class BattleHandlers
             var character = winner.ActiveCharacter!;
             var playerFighter = battle.Players.Find(p => ReferenceEquals(p.Session, winner) && !p.Left);
             var rawExp = Share(playerFighter, character.Level);
-            var flat = TrainingFlatExp(character, defeated);
-            var burst = flat > 0 ? 0 : DamageBurst(playerFighter, character.Level);
-            var exp = flat > 0 ? flat : Seasonal(rawExp);
-            var own = flat > 0
-                ? flat
-                : character.ExpPausedSince is null
-                    ? exp
-                        * BattleFormulas.CappedExpMultipliers(
-                            calendar.ExpMultiplier(),
-                            TimedEffects.ExpMultiplier(character, TimedEffects.Now),
-                            o.ExpMultiplierCap).Potion
-                    : exp;
-            own += burst;
+            var exp = Seasonal(rawExp);
+            var own = character.ExpPausedSince is null
+                ? exp
+                    * BattleFormulas.CappedExpMultipliers(
+                        calendar.ExpMultiplier(),
+                        TimedEffects.ExpMultiplier(character, TimedEffects.Now),
+                        o.ExpMultiplierCap).Potion
+                : exp;
+            own += DamageBurst(playerFighter, character.Level);
+            // On the Training Island a win pays at least the flat amount, which events and potions do not raise.
+            var flat = TrainingFlatExp(character, defeated) is var floor && floor > own ? floor : 0;
+            if (flat > 0)
+                own = flat;
 
             (Data.Pet Pet, int Exp)? earns = null;
+            var buffShareBase = 0;
             if (battle.Pets.Find(p => ReferenceEquals(p.Session, winner)) is { IsAlive: true, Left: false, OwnedPet: { } pet } petFighter)
             {
-                if (Seasonal(Share(petFighter, pet.Level)) + DamageBurst(petFighter, pet.Level) is var petExp and > 0)
+                // The owner's EXP potion works for the pet too, but not on bursting (combination damage) experience.
+                var petPotion = character.ExpPausedSince is null
+                    ? BattleFormulas.CappedExpMultipliers(calendar.ExpMultiplier(), TimedEffects.ExpMultiplier(character, TimedEffects.Now), o.ExpMultiplierCap)
+                        .Potion
+                    : 1;
+                var petShare = Seasonal(Share(petFighter, pet.Level));
+                var petBurst = DamageBurst(petFighter, pet.Level);
+                buffShareBase = petShare + petBurst;
+                if ((int)Math.Min(int.MaxValue, Math.Round(petShare * petPotion)) + petBurst is var petExp and > 0)
                     earns = (pet, petExp);
             }
-            if (earns is { } e && playerFighter is { BuffedPet: true } && flat == 0)
-                own += BattleFormulas.BuffShare(e.Exp, o.BuffSharePercent);
+            if (earns is not null && playerFighter is { BuffedPet: true } && flat == 0)
+                own += BattleFormulas.BuffShare(buffShareBase, o.BuffSharePercent);
             character.Exp = (int)Math.Min(int.MaxValue, (long)character.Exp + (long)Math.Round(own));
             shares.Add((winner, (int)Math.Round(own)));
             winner.Send(InnMessages.SetAttribute(Action8.AttrExp, character.Exp));
@@ -264,7 +273,7 @@ public sealed partial class BattleHandlers
         return monster.DropItem;
     }
 
-    /// <summary>The flat experience a Training Island win pays when the level gap would leave nothing.</summary>
+    /// <summary>The least experience a Training Island win pays.</summary>
     /// <param name="character">The winner's character.</param>
     /// <param name="defeated">The records of the defeated monsters.</param>
     /// <returns>The flat experience, or 0 when it does not apply.</returns>
@@ -272,7 +281,6 @@ public sealed partial class BattleHandlers
     {
         var o = options.Value;
         return o.TrainingIslandFlatExp > 0 && character.MapId == TrainingIslandHandlers.IslandMap && defeated.Count > 0
-            && defeated.All(n => BattleFormulas.LevelGapScale(character.Level, n.Level, o.LevelGapFullUpTo, o.LevelGapZeroFrom) <= 0)
             ? o.TrainingIslandFlatExp : 0;
     }
 

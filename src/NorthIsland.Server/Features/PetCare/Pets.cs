@@ -151,15 +151,18 @@ public static class Pets
         return 0;
     }
 
-    /// <summary>Creates a pet from a monster record, with full HP and SP.</summary>
+    /// <summary>
+    /// Creates a pet from a monster record, with full HP and SP. A new pet starts at level 1 however it was obtained (an egg, a pack, a voucher,
+    /// a capture); only a returning human pet or a traded pet keeps its level, and those are not made here.
+    /// </summary>
     /// <param name="npc">The monster's NPC record.</param>
     /// <param name="slot">The team slot.</param>
     /// <param name="formulas">The formula table for HP, SP and exp; null uses a fixed rule for HP and SP.</param>
-    /// <param name="level">The level to start at instead of the record's level; null for the record's level.</param>
+    /// <param name="level">The level to start at.</param>
     /// <returns>The new pet.</returns>
-    public static Pet Create(NpcRecord npc, byte slot, FormulaTable? formulas, byte? level = null)
+    public static Pet Create(NpcRecord npc, byte slot, FormulaTable? formulas, byte level = 1)
     {
-        var startLevel = Math.Max((byte)1, level ?? npc.Level);
+        var startLevel = Math.Max((byte)1, level);
         var pet = new Pet
         {
             Slot = slot,

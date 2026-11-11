@@ -155,7 +155,7 @@ public sealed class WorldEntry(
         if (character.Pets.Count > 0)
             session.Send(PetMessages.List(character.Pets.Select(Pets.Info), session.Client));
         foreach (var pet in character.Pets.Where(p => p.Equipment.Count > 0))
-            combat.SendPetBonuses(session, pet);
+            combat.SendPetBonuses(session, pet, changed: false);
         PetStorageHandlers.SendList(session, character);
         if (character.ActivePetId != 0 && !character.Pets.Exists(p => p.NpcId == character.ActivePetId))
             character.ActivePetId = 0;

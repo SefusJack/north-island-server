@@ -22,6 +22,11 @@ public sealed class VehicleCareHandlers(
     /// <returns>The maximum wear.</returns>
     public static int MaxWear(ItemRecord vehicle) => (int)Math.Ceiling(Math.Pow(Math.Max(1, (int)vehicle.ShopColumn), 1.3)) * 1800;
 
+    /// <summary>Gives the fuel of a full tank: the client draws the fuel bar against the most wear; the fuel field holds at most 65535.</summary>
+    /// <param name="vehicle">The vehicle's item record.</param>
+    /// <returns>The fuel of a full tank.</returns>
+    public static int FullTank(ItemRecord vehicle) => Math.Min(ushort.MaxValue, MaxWear(vehicle));
+
     /// <summary>Sends the vehicle's wear and fuel to its owner.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="vehicle">The vehicle's bag stack.</param>
@@ -60,10 +65,10 @@ public sealed class VehicleCareHandlers(
             || items[vehicle.ItemId] is not { } record
             || (record.Ints42.Length < 2 || (record.Ints42[0] != fuelItem && record.Ints42[1] != fuelItem)))
             return false;
-        var max = Math.Max(1, options.Value.Vehicles.FuelMax);
+        var max = FullTank(record);
         if (vehicle.Extra >= max)
             return false;
-        vehicle.Extra = (ushort)Math.Min(max, vehicle.Extra + Math.Max(1, options.Value.Vehicles.FuelPerItem));
+        vehicle.Extra = (ushort)Math.Min(max, vehicle.Extra + Math.Max(1, max * options.Value.Vehicles.FuelPercentPerItem / 100));
         SendState(session, vehicle);
         logger.LogInformation("[{Session}] {Name} refuels {Vehicle}: {Fuel}", session.Id, c.Name, record.Name.Trim(), vehicle.Extra);
         return true;
@@ -93,6 +98,7 @@ public sealed class VehicleCareHandlers(
         var off = VehicleMessages.Dismounted(vehicle.Slot, session.Account!.LoginId);
         session.Send(off);
         world.Broadcast(session, off, sameMapOnly: true);
+        world.ClearPassengers(session);
         if (dry)
             session.Send(VehicleMessages.NoFuel());
         logger.LogInformation("[{Session}] {Name}'s {Vehicle} stops: {Why}", session.Id, c.Name, record.Name.Trim(), dry ? "no fuel" : "worn out");

@@ -73,7 +73,7 @@ public sealed class Battle
 
     /// <summary>True while some fighter of the own side can still act this round and has not chosen a command.</summary>
     public bool AwaitsCommands => OwnSide.Any(f => f.IsAlive && !StatusRules.CannotAct(f) && !Commands.ContainsKey(f)
-        && (f.Kind != 4 || OwnerOf(f).IsAlive) && f.JoinedRound != Round); // pet
+        && (f.Kind != 4 || OwnerOf(f).IsAlive) && f.JoinedRound != Round && f.SummonedRound != Round); // pet
 
     /// <summary>Finds the own side fighter standing in a cell.</summary>
     /// <param name="row">The row of the cell.</param>
@@ -104,7 +104,12 @@ public sealed class Battle
     /// <summary>Lists the living fighters on the other side.</summary>
     /// <param name="f">The fighter whose enemies are wanted.</param>
     /// <returns>The living fighters whose side differs from <paramref name="f"/>.</returns>
-    public IEnumerable<Fighter> EnemiesOf(Fighter f) => All.Where(x => x.Side != f.Side && x.IsAlive);
+    /// <remarks>
+    /// In the order the client's auto play picks targets: on screen each row is a slanted line of cells, so the enemies come line by line,
+    /// the left line first (rows 1 then 2, or 4 then 3 on the right side), and down each line by column.
+    /// </remarks>
+    public IEnumerable<Fighter> EnemiesOf(Fighter f) =>
+        All.Where(x => x.Side != f.Side && x.IsAlive).OrderBy(x => x.Row <= 2 ? x.Row : -x.Row).ThenBy(x => x.Col);
 
     /// <summary>The background scene id sent to the client when the battle starts.</summary>
     public byte Background { get; set; }
@@ -394,20 +399,9 @@ public sealed class Battle
         byte side = 1)
     {
         var (playerRow, petRow) = side == 1 ? (PlayerRow, PetRow) : ((byte)1, (byte)2);
-        int Worn(List<EquippedItem> equipment, byte attr) =>
-            items is null
-                ? 0
-                : equipment.Sum(
-                    e =>
-                        !Durability.IsDestroyed(e.Wear) && items(e.ItemId) is { } r
-                            ? Gems.Effect(r, e.Insert == 0 ? null : items(e.Insert), attr, e.Fusion)
-                            : 0);
-        int Critical(List<EquippedItem> equipment) =>
-            items is null ? 0 : equipment.Where(e => e.Slot == Gems.WeaponSlot).Sum(e =>
-                (e.Insert != 0 ? Gems.CriticalPercent(items(e.Insert)) : 0)
-                    + (Durability.IsDestroyed(e.Wear) ? 0 : Gems.WeaponCriticalPercent(items(e.ItemId))));
-        bool Pestle(List<EquippedItem> equipment) =>
-            items is not null && equipment.Exists(e => e.Slot == Gems.WeaponSlot && !Durability.IsDestroyed(e.Wear) && Gems.HalvesTargetSp(items(e.ItemId)));
+        int Worn(List<EquippedItem> equipment, byte attr) => WornBonus(items, equipment, attr);
+        int Critical(List<EquippedItem> equipment) => WornCritical(items, equipment);
+        bool Pestle(List<EquippedItem> equipment) => WornPestle(items, equipment);
         var playerWindow = Combat?.Values(character, session is null ? null : CombatStats.Ridden(session)) ?? new int[5];
         var player = new Fighter
         {
@@ -445,47 +439,91 @@ public sealed class Battle
         };
         Players.Add(player);
         if (character.ActivePetId != 0 && character.Pets.Find(p => p.NpcId == character.ActivePetId) is { } pet)
-        {
-            var petWindow = Combat?.PetValues(pet) ?? new int[5];
-            Pets.Add(new Fighter
-            {
-                Kind = 4, // pet
-                Id = pet.NpcId,
-                OwnerId = playerId,
-                Row = petRow,
-                Col = col,
-                Name = pet.Name,
-                MaxHp = pet.MaxHp,
-                MaxSp = pet.MaxSp,
-                Hp = Math.Max(1, pet.Hp),
-                Sp = pet.Sp,
-                HpSent = pet.Hp,
-                Level = pet.Level,
-                Element = pet.Element,
-                Reborn = pet.Reborn,
-                Strength = pet.Strength,
-                Constitution = pet.Constitution,
-                Agility = pet.Agility,
-                Intelligence = pet.Intelligence,
-                Wisdom = pet.Wisdom,
-                Attack = Worn(pet.Equipment, AttrAttack),
-                Defence = Worn(pet.Equipment, AttrDefence),
-                WindowSpeed = petWindow[CombatStats.SpeedIndex],
-                WindowAttack = petWindow[0],
-                WindowDefence = petWindow[1],
-                WindowMagicAttack = petWindow[2],
-                WindowMagicDefence = petWindow[3],
-                MagicAttack = Worn(pet.Equipment, AttrMagicAttack),
-                MagicDefence = Worn(pet.Equipment, AttrMagicDefence),
-                CriticalPercent = Critical(pet.Equipment),
-                HalvesTargetSp = Pestle(pet.Equipment),
-                Npc = npcs(pet.NpcId),
-                OwnedPet = pet,
-                Session = session,
-            });
-        }
+            AddPet(pet, player, session, petRow, npcs, items);
         return player;
     }
+
+    /// <summary>Adds a player's pet to the battle in the player's column.</summary>
+    /// <param name="pet">The pet.</param>
+    /// <param name="player">The owner's fighter.</param>
+    /// <param name="session">The owner's session, or null.</param>
+    /// <param name="petRow">The row pets of the owner's side stand in.</param>
+    /// <param name="npcs">Looks up an NPC record by id.</param>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count.</param>
+    /// <returns>The pet's fighter.</returns>
+    public Fighter AddPet(Pet pet, Fighter player, GameSession? session, byte petRow, Func<ushort, NpcRecord?> npcs, Func<ushort, ItemRecord?>? items)
+    {
+        var playerId = player.Id;
+        var petWindow = Combat?.PetValues(pet) ?? new int[5];
+        var fighter = new Fighter
+        {
+            Kind = 4, // pet
+            Id = pet.NpcId,
+            OwnerId = playerId,
+            Row = petRow,
+            Col = player.Col,
+            Name = pet.Name,
+            MaxHp = pet.MaxHp,
+            MaxSp = pet.MaxSp,
+            Hp = Math.Max(1, pet.Hp),
+            Sp = pet.Sp,
+            HpSent = pet.Hp,
+            Level = pet.Level,
+            Element = pet.Element,
+            Reborn = pet.Reborn,
+            Strength = pet.Strength,
+            Constitution = pet.Constitution,
+            Agility = pet.Agility,
+            Intelligence = pet.Intelligence,
+            Wisdom = pet.Wisdom,
+            Attack = WornBonus(items, pet.Equipment, AttrAttack),
+            Defence = WornBonus(items, pet.Equipment, AttrDefence),
+            WindowSpeed = petWindow[CombatStats.SpeedIndex],
+            WindowAttack = petWindow[0],
+            WindowDefence = petWindow[1],
+            WindowMagicAttack = petWindow[2],
+            WindowMagicDefence = petWindow[3],
+            MagicAttack = WornBonus(items, pet.Equipment, AttrMagicAttack),
+            MagicDefence = WornBonus(items, pet.Equipment, AttrMagicDefence),
+            CriticalPercent = WornCritical(items, pet.Equipment),
+            HalvesTargetSp = WornPestle(items, pet.Equipment),
+            Npc = npcs(pet.NpcId),
+            OwnedPet = pet,
+            Session = session,
+        };
+        Pets.Add(fighter);
+        return fighter;
+    }
+
+    /// <summary>The bonus of an attribute from worn items that are not destroyed, with their gems and fusion.</summary>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count.</param>
+    /// <param name="equipment">The worn items.</param>
+    /// <param name="attr">The attribute id.</param>
+    /// <returns>The bonus.</returns>
+    private static int WornBonus(Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment, byte attr) =>
+        items is null
+            ? 0
+            : equipment.Sum(
+                e =>
+                    !Durability.IsDestroyed(e.Wear) && items(e.ItemId) is { } r
+                        ? Gems.Effect(r, e.Insert == 0 ? null : items(e.Insert), attr, e.Fusion)
+                        : 0);
+
+    /// <summary>The critical hit percent of the worn weapon and its gem.</summary>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count.</param>
+    /// <param name="equipment">The worn items.</param>
+    /// <returns>The percent.</returns>
+    private static int WornCritical(Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment) =>
+        items is null ? 0 : equipment.Where(e => e.Slot == Gems.WeaponSlot).Sum(e =>
+            (e.Insert != 0 ? Gems.CriticalPercent(items(e.Insert)) : 0)
+                + (Durability.IsDestroyed(e.Wear) ? 0 : Gems.WeaponCriticalPercent(items(e.ItemId))));
+
+    /// <summary>Whether the worn weapon halves the target's SP (a pestle).</summary>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count.</param>
+    /// <param name="equipment">The worn items.</param>
+    /// <returns>True for a working pestle.</returns>
+    private static bool WornPestle(Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment) =>
+        items is not null && equipment.Exists(e => e.Slot == Gems.WeaponSlot && !Durability.IsDestroyed(e.Wear) && Gems.HalvesTargetSp(items(e.ItemId)));
 
     /// <summary>Orders the fighters for the viewer's fight start packet: the viewer's own fighters first, then the rest.</summary>
     /// <param name="viewer">The player fighter the packet is for.</param>

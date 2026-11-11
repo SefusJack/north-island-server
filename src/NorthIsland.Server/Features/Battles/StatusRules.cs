@@ -101,6 +101,22 @@ public static class StatusRules
         ? status.Attr is Control or Shield or Debuff or Debuff2
         : status.Effect == effect;
 
+    /// <summary>Whether a status is a debuff (the control and debuff slots).</summary>
+    /// <param name="status">The status to test.</param>
+    /// <returns>True for the control and debuff slots.</returns>
+    public static bool IsDebuff(FighterStatus status) => status.Attr is Control or Debuff or Debuff2;
+
+    /// <summary>
+    /// Tells whether a status put on an enemy misses because the enemy already carries a debuff: a control or debuff status does not land
+    /// on an enemy that has one until that one is gone.
+    /// </summary>
+    /// <param name="attr">The slot attribute the new status would go into.</param>
+    /// <param name="caster">The fighter putting the status on.</param>
+    /// <param name="target">The fighter receiving it.</param>
+    /// <returns>True when the status misses.</returns>
+    public static bool BlockedByDebuff(byte attr, Fighter caster, Fighter target) =>
+        attr is Control or Debuff or Debuff2 && caster.Side != target.Side && target.Statuses.Exists(IsDebuff);
+
     /// <summary>Whether a skill effect counts as a debuff for the damage burst.</summary>
     /// <param name="effect">The Skill.dat effect byte.</param>
     /// <returns>True for the effects that go into the control and debuff slots.</returns>

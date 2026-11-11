@@ -124,7 +124,7 @@ public sealed class TradeHandlers(
         var offer = TradeOffer.Parse(body.Span);
         var slots = offer.BagSlots.Distinct().ToList();
         var stacks = slots.Select(s => character.Bag.Find(b => b.Slot == s)).ToList();
-        if (offer.Gold < 0 || offer.Gold > character.Gold || stacks.Any(s => s is null) || slots.Any(s => session.Vehicle?.BagSlot == s))
+        if (offer.Gold < 0 || offer.Gold > character.Gold || stacks.Any(s => s is null || Bag.IsNoTrade(items, s)) || slots.Any(s => session.Vehicle?.BagSlot == s))
         {
             logger.LogWarning(
                 "[{Session}] trade offer refused: gold {Gold} (has {Has}), slots {Slots}",

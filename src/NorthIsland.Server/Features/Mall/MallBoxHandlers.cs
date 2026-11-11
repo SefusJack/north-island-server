@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NorthIsland.Protocol.Messages.Items;
 using NorthIsland.Protocol.Messages.Player;
+using NorthIsland.Protocol.Opcodes;
 
 namespace NorthIsland.Server.Features.Mall;
 
@@ -13,6 +14,8 @@ namespace NorthIsland.Server.Features.Mall;
 public sealed class MallBoxHandlers(
     ItemData items,
     IOptions<MallOptions> options,
+    NpcData npcs,
+    FormulaData formulas,
     ILogger<MallBoxHandlers> logger)
 {
     /// <summary>Reward tables by box item id.</summary>
@@ -105,6 +108,11 @@ public sealed class MallBoxHandlers(
         if (session.State != SessionState.InWorld || session.ActiveCharacter is not { } c || session.Battle is not null || body.Length < 1)
             return ValueTask.CompletedTask;
         var stack = c.Bag.Find(b => b.Slot == body.Span[0]);
+        if (stack?.ItemId == PetEgg.ItemId)
+        {
+            HatchPetEgg(session, c, stack);
+            return ValueTask.CompletedTask;
+        }
         if (stack is null || !_tables.TryGetValue(stack.ItemId, out var table))
         {
             logger.LogInformation("[{Session}] {Name}: bag slot {Slot} does not open as a box", session.Id, c.Name, body.Span[0]);
@@ -166,5 +174,35 @@ public sealed class MallBoxHandlers(
         session.Send(GroundMessages.ItemObtained(reward.ItemId, (ushort)added));
         logger.LogInformation("[{Session}] {Name} opens {Box}: {Item} x{Count}", session.Id, c.Name, boxName, items[reward.ItemId]!.Name.Trim(), added);
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Hatches a Pet Egg: a random pet joins the team, unless the team is full or already has that pet.</summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="c">The player's character.</param>
+    /// <param name="stack">The egg's bag stack.</param>
+    private void HatchPetEgg(GameSession session, Character c, BagItem stack)
+    {
+        var npcId = PetEgg.Roll(GameRandom.Shared.Next);
+        if (npcs[npcId] is not { } npc)
+            return;
+        byte? refusal = c.Pets.Count >= Pet.MaxPets ? Action83.PetSlotsFull
+            : c.Pets.Exists(p => p.NpcId == npcId) ? Action83.SamePet
+                : c.StoredPets.Exists(p => p.NpcId == npcId) ? Action83.KeeperHasPet
+                    : null;
+        if (refusal is { } code)
+        {
+            logger.LogInformation("[{Session}] {Name}: Pet Egg refused (code {Code}, rolled {Pet})", session.Id, c.Name, code, npc.Name);
+            session.Send(new NorthIsland.Protocol.IO.PacketWriter(Action83.Code, code).ToArray());
+            return;
+        }
+        stack.Count--;
+        if (stack.Count == 0)
+            c.Bag.Remove(stack);
+        session.Send(ItemMessages.BagSlotDecrease(stack.Slot, 1));
+        var pet = Pets.Create(npc, Pets.FreeSlot(c), formulas.Table);
+        c.Pets.Add(pet);
+        session.Send(PetMessages.Joined(session.Account!.LoginId, Pets.Info(pet)));
+        logger.LogInformation("[{Session}] {Name} hatches a Pet Egg: {Pet} ({Npc}) joins the team in slot {Slot}", session.Id, c.Name, pet.Name, pet.NpcId,
+            pet.Slot);
     }
 }

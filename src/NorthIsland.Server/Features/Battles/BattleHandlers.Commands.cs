@@ -24,7 +24,7 @@ public sealed partial class BattleHandlers
         lock (battle.Lock)
         {
             if (battle.Phase != BattlePhase.Command || battle.OwnAt(command.ActorRow, command.ActorCol) is not { IsAlive: true } actor
-                || !ReferenceEquals(actor.Session, session) || !battle.Commands.TryAdd(actor, command))
+                || !ReferenceEquals(actor.Session, session) || actor.SummonedRound == battle.Round || !battle.Commands.TryAdd(actor, command))
                 return ValueTask.CompletedTask;
             logger.LogInformation("[{Session}] round {Round}: {Actor} ({Row},{Col}) uses {What} {Id} on ({TargetRow},{TargetCol})", session.Id,
                 battle.Round,

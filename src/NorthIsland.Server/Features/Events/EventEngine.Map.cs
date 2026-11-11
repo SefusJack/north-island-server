@@ -43,6 +43,7 @@ public sealed partial class EventEngine
             foreach (var group in ConditionEvaluator.Groups(ev))
                 run.Groups.Enqueue(group);
         SendEntryStates(session, scene, character, run);
+        RevealUsableNpcs(session, scene, character, run);
         if (run.Groups.Count == 0)
         {
             session.Event = null;
@@ -50,6 +51,33 @@ public sealed partial class EventEngine
         }
         session.Event = run;
         Advance(session);
+    }
+
+    /// <summary>
+    /// NPCs placed hidden (placement flag bit 1 clear) whose click event is the only way on in a quest, while no script ever shows them: the
+    /// clients cannot click a hidden NPC, so the server shows each one on map entry while a group of its click event holds. The event's own
+    /// results hide it again. Not sourced from the original server, which must have shown them some other way.
+    /// </summary>
+    private static readonly HashSet<(int Map, int Role)> RevealedWhileUsable =
+    [
+        (11032, 1), // Water Maze: the Fairy Statue (12057), whose event 2 is the only source of mark 13097 "The Fairy's Revelation"
+    ];
+
+    /// <summary>Shows the player the hidden NPCs of <see cref="RevealedWhileUsable"/> on this map whose click event can run now.</summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="scene">The scene of the map.</param>
+    /// <param name="character">The character.</param>
+    /// <param name="run">The map entry run, used to check the conditions.</param>
+    private void RevealUsableNpcs(GameSession session, EveScene scene, Character character, EventRun run)
+    {
+        foreach (var (map, role) in RevealedWhileUsable)
+        {
+            if (map != character.MapId || scene.NpcByRoleIndex(role) is not { } npc
+                || !scene.EventsOf(npc).SelectMany(ConditionEvaluator.Groups).Any(g => g.Results.Count > 0 && ConditionEvaluator.Holds(g, character, run, logger)))
+                continue;
+            session.Send(EventMessages.NpcShowFor((ushort)role, ushort.MaxValue));
+            logger.LogInformation("[{Session}] map {Map}: shows hidden NPC {Role} ({Npc}), whose event can run", session.Id, map, role, npc.NpcId);
+        }
     }
 
     /// <summary>
