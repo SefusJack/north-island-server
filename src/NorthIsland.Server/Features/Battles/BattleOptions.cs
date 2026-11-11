@@ -33,35 +33,8 @@ public sealed class BattleOptions
     /// <summary>Seconds added to the command time before the server plays a round with the commands it has.</summary>
     public int BattleCommandGraceSeconds { get; set; } = 3;
 
-    /// <summary>The largest difference in turn speed between two fighters that can still join the same combination.</summary>
+    /// <summary>The largest difference in turn speed between two fighters that can still join the same combination; a fighter within it always joins.</summary>
     public int ComboSpeedRange { get; set; } = 100;
-
-    /// <summary>The level lead of the attacking side over the target at which a further attacker always joins a combination.</summary>
-    public int ComboFullLevelGap { get; set; } = 25;
-
-    /// <summary>The level lead from which <see cref="ComboHighPercent"/> is the join chance.</summary>
-    public int ComboHighLevelGap { get; set; } = 20;
-
-    /// <summary>The join chance in percent at <see cref="ComboHighLevelGap"/>.</summary>
-    public int ComboHighPercent { get; set; } = 90;
-
-    /// <summary>The level lead from which <see cref="ComboMidPercent"/> is the join chance.</summary>
-    public int ComboMidLevelGap { get; set; } = 15;
-
-    /// <summary>The join chance in percent at <see cref="ComboMidLevelGap"/>.</summary>
-    public int ComboMidPercent { get; set; } = 75;
-
-    /// <summary>The join chance in percent below the mid gap; with the sliding curve, the value the chance starts from.</summary>
-    public int ComboBasePercent { get; set; } = 50;
-
-    /// <summary>How the join chance of a combination depends on the level lead.</summary>
-    public ComboChanceCurve ComboChanceCurve { get; set; }
-
-    /// <summary>Which fighters' levels are averaged for the combination odds.</summary>
-    public ComboOddsLevels ComboOddsLevels { get; set; }
-
-    /// <summary>The levels a fighter counts per rebirth on top of its level for the combination odds.</summary>
-    public int ComboRebornLevelBonus { get; set; } = 99;
 
     /// <summary>The percent added to the damage of every member of a combination; 0 is the plain sum.</summary>
     public int ComboDamageBonusPercent { get; set; }

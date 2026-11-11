@@ -337,19 +337,13 @@ public sealed partial class BattleHandlers
         var o = options.Value;
         if (ComboAttackOf(battle, order[turn], commands, monsterPlans) is not { } lead)
             return null;
-        double Chance(IReadOnlyCollection<Fighter>? joining = null) =>
-            ComboRules.ChancePercent(ComboRules.AverageLevel(battle, lead.Attacker.Side, o, joining), ComboRules.EffectiveLevel(lead.Target, o), o);
-        var chance = Chance();
         List<ComboAttack> members = [lead];
         for (var next = turn + 1; next < order.Count; next++)
         {
             var fighter = order[next];
             if (!fighter.IsAlive || fighter.Left || inCombo.Contains(fighter) || fighter.Side != lead.Attacker.Side
                 || ComboAttackOf(battle, fighter, commands, monsterPlans) is not { } attack || !ReferenceEquals(attack.Target, lead.Target)
-                || !ComboRules.WithinSpeedRange(members[^1].Attacker, fighter, o)
-                || GameRandom.Shared.NextDouble() * 100 >= (o.ComboOddsLevels == ComboOddsLevels.Members
-                    ? Chance([.. members.Select(m => m.Attacker), fighter])
-                    : chance))
+                || !ComboRules.WithinSpeedRange(members[^1].Attacker, fighter, o))
                 continue;
             members.Add(attack);
         }
@@ -408,12 +402,10 @@ public sealed partial class BattleHandlers
         foreach (var (attacker, skill, gain) in trained)
             TrainSkill(session, attacker, skill, gain);
         logger.LogInformation(
-            "[{Session}] combination of {Count} on {Target} (chance {Chance:0.#} %, average level {Average:0.#})",
+            "[{Session}] combination of {Count} on {Target}",
             session.Id,
             records.Count,
-            target.Name,
-            chance,
-            ComboRules.AverageLevel(battle, lead.Attacker.Side, o));
+            target.Name);
         await ActionPause(played, defends: target.Defending && !lead.Attacker.IsHuman).ConfigureAwait(false);
         BreakSleep(battle, target);
         if (!target.IsAlive)

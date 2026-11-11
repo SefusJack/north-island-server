@@ -10,51 +10,6 @@ public static class ComboRules
     /// <returns>True for a hand attack and for a damage skill aimed at one enemy.</returns>
     public static bool IsSingleTargetAttack(SkillRecord? skill) => skill is null or { Type: 1 or 2, TargetType: 0 };
 
-    /// <summary>The fighter's level as the combination odds count it, with a bonus per rebirth.</summary>
-    /// <param name="f">The fighter.</param>
-    /// <param name="o">The battle options.</param>
-    /// <returns>The level plus the rebirth count times <see cref="BattleOptions.ComboRebornLevelBonus"/>.</returns>
-    public static int EffectiveLevel(Fighter f, BattleOptions o) => f.Level + f.Reborn * o.ComboRebornLevelBonus;
-
-    /// <summary>The average effective level of one side for the combination odds.</summary>
-    /// <param name="battle">The battle.</param>
-    /// <param name="side">The side whose fighters are averaged.</param>
-    /// <param name="o">The battle options; <see cref="BattleOptions.ComboOddsLevels"/> picks who counts.</param>
-    /// <param name="members">The fighters in the combination so far plus the one about to join, or null.</param>
-    /// <returns>The average, or 0 when nobody counts.</returns>
-    public static double AverageLevel(Battle battle, byte side, BattleOptions o, IReadOnlyCollection<Fighter>? members = null)
-    {
-        var standing = battle.All.Where(f => f.Side == side && f.IsAlive).ToList();
-        var counted = o.ComboOddsLevels switch
-        {
-            ComboOddsLevels.Players when standing.Exists(f => f.Kind == 2) => standing.FindAll(f => f.Kind == 2), // 2 player, 2 player
-            ComboOddsLevels.Members when members is { Count: > 0 } => [.. members], // members only: the combination's members
-            _ => standing, // any other case: every fighter still standing
-        };
-        return counted.Count == 0 ? 0 : counted.Average(f => EffectiveLevel(f, o));
-    }
-
-    /// <summary>The chance that a combination forms against a target.</summary>
-    /// <param name="averageLevel">The average level of the attacking side, see <see cref="AverageLevel"/>.</param>
-    /// <param name="targetLevel">The level of the target.</param>
-    /// <param name="o">The battle options with the gap thresholds and percentages.</param>
-    /// <returns>The chance in percent, 0 to 100.</returns>
-    public static double ChancePercent(double averageLevel, int targetLevel, BattleOptions o)
-    {
-        var gap = averageLevel - targetLevel;
-        if (gap >= o.ComboFullLevelGap)
-            return 100;
-        if (o.ComboChanceCurve == ComboChanceCurve.Sliding)
-        {
-            var maxMobLevel = averageLevel - o.ComboFullLevelGap;
-            var reach = targetLevel <= 0 ? 0 : Math.Clamp(maxMobLevel / targetLevel, 0, 1);
-            return o.ComboBasePercent + (100 - o.ComboBasePercent) * reach;
-        }
-        return gap >= o.ComboHighLevelGap ? o.ComboHighPercent
-            : gap >= o.ComboMidLevelGap ? o.ComboMidPercent
-                : o.ComboBasePercent;
-    }
-
     /// <summary>Tells whether two fighters' turn speeds are close enough for them to combine.</summary>
     /// <param name="previous">The fighter already in the combination.</param>
     /// <param name="next">The fighter about to join.</param>
