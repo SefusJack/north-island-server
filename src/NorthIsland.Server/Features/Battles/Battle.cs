@@ -179,6 +179,24 @@ public sealed class Battle
     public Fighter? At(byte row, byte col) =>
         All.Where(f => f.Row == row && f.Col == col).OrderByDescending(f => f.IsAlive).FirstOrDefault();
 
+    /// <summary>Finds the fighters a skill's target area reaches around the chosen fighter, on the chosen fighter's side.</summary>
+    /// <param name="chosen">The fighter the skill was cast on; always part of the area.</param>
+    /// <param name="area">
+    /// The Skill.dat area code: 2 adds the fighter in the other row of the same column, 3 the fighters above and below in the same row;
+    /// any other code is the chosen fighter alone.
+    /// </param>
+    /// <returns>The chosen fighter, then the living fighters of the other cells of the area.</returns>
+    public List<Fighter> AreaAround(Fighter chosen, byte area)
+    {
+        (int Row, int Col)[] cells = area switch
+        {
+            2 => [(chosen.Row is 1 or 3 ? chosen.Row + 1 : chosen.Row - 1, chosen.Col)], // rows 1-2 and 3-4 face each other on a side
+            3 => [(chosen.Row, chosen.Col - 1), (chosen.Row, chosen.Col + 1)],
+            _ => [],
+        };
+        return [chosen, .. cells.Select(c => All.FirstOrDefault(f => f.Row == c.Row && f.Col == c.Col && f.IsAlive && f.Side == chosen.Side)).OfType<Fighter>()];
+    }
+
     /// <summary>Every fighter still present: the players, their pets and the monsters.</summary>
     public IEnumerable<Fighter> All => OwnSide.Concat(Monsters);
 

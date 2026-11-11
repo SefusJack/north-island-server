@@ -36,4 +36,13 @@ public sealed record SkillRecord(
 
     /// <summary>The id of the skill that has to be learned first; 0 for none.</summary>
     public ushort PrereqSkillId { get; init; }
+
+    /// <summary>The target area code of each of the four level tiers; 0 or 1 is the chosen fighter alone.</summary>
+    public IReadOnlyList<byte> Areas { get; init; } = [];
+
+    /// <summary>The target area code at a skill level: levels 1-3, 4-6 and 7-9 use the first three tiers, the maximum level the fourth.</summary>
+    /// <param name="level">The skill level.</param>
+    /// <returns>The area code, 1 when the record has none.</returns>
+    public byte AreaAt(int level) =>
+        Areas.Count < 4 ? (byte)1 : Math.Max((byte)1, Areas[level >= MaxLevel ? 3 : Math.Clamp((level - 1) / 3, 0, 2)]);
 }

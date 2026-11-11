@@ -22,6 +22,7 @@ public sealed partial class BattleHandlers
         if (player.IsHuman && !target.IsHuman)
             target.NoteAction(player);
         List<FighterValue> values = [];
+        List<ActionTarget> areaTargets = [];
         var hit = true;
         var took = false;
         var hadEffect = skill.Effect != 0 && target.HasEffect(skill.Effect);
@@ -35,26 +36,20 @@ public sealed partial class BattleHandlers
                 what = removed.Count > 0 ? $"removes {string.Join(", ", removed.Select(s => s.Effect))}" : "removes nothing";
                 took = removed.Count > 0;
                 break;
-            case 6 or 7 or 14: // heal skills (types 6, 7, 14): restore SP, HP or both
+            case 6 or 7 or 14: // heal skills (types 6, 7, 14): restore SP, HP or both on every fighter of the skill's area
                 var amount = BattleFormulas.HealAmount(player, skill.Power);
-                var hp = skill.Type is 7 or 14 ? Math.Min(amount, target.MaxHp - target.Hp) : 0;
-                var sp = skill.Type is 6 or 14 ? Math.Min(amount, target.MaxSp - target.Sp) : 0;
-                target.Hp += hp;
-                target.Sp += sp;
-                if (skill.Type == 7 && skill.Effect == StatusRules.Regeneration)
+                List<string> healedText = [];
+                foreach (var healed in battle.AreaAround(target, skill.AreaAt(BattleFormulas.SkillLevelOf(player, skill.Id))))
                 {
-                    AddStatus(battle, target, skill, 232, amount / 2);
-                    values.Add(new FighterValue(232, hp, Negative: false));
+                    var (healedValues, hp, sp, healedTook) = Heal(battle, healed, skill, amount);
+                    if (ReferenceEquals(healed, target))
+                        values = healedValues;
+                    else
+                        areaTargets.Add(new ActionTarget(healed.Row, healed.Col, Hit: true, Guard: 0, healedValues));
+                    healedText.Add($"{healed.Name} {hp} HP, {sp} SP");
+                    took |= healedTook;
                 }
-                else
-                {
-                    if (skill.Type is 7 or 14)
-                        values.Add(new FighterValue(BattleMessages.AttrHp, hp, Negative: false));
-                    if (skill.Type is 6 or 14)
-                        values.Add(new FighterValue(BattleMessages.AttrSp, sp, Negative: false));
-                }
-                what = $"restores {hp} HP, {sp} SP";
-                took = hp + sp > 0 || (skill.Type == 7 && skill.Effect == StatusRules.Regeneration && !hadEffect);
+                what = $"restores {string.Join("; ", healedText)}";
                 break;
             default: // other support skills: put a status on the target
                 var attr = StatusRules.AttrFor(skill.Effect, target);
@@ -74,7 +69,7 @@ public sealed partial class BattleHandlers
                 break;
         }
         battle.Send(
-            client => BattleMessages.Action(player.Row, player.Col, skill.Id, [new ActionTarget(target.Row, target.Col, hit, Guard: 0, values)], client));
+            client => BattleMessages.Action(player.Row, player.Col, skill.Id, [new ActionTarget(target.Row, target.Col, hit, Guard: 0, values), .. areaTargets], client));
         if (took)
             TrainSkill(session, player, skill, target.Level);
         foreach (var s in removed.Where(s => s.Attr is StatusRules.Debuff2 or 227 or 228))
@@ -82,6 +77,36 @@ public sealed partial class BattleHandlers
         logger.LogInformation("[{Session}] {Player} uses {Skill} ({Cost} SP, {Sp} left) on {Target}: {What}", session.Id, player.Name,
             skill.Name, skill.SpCost, player.Sp, target.Name, what);
         await ActionPause(skill.Id, player, target).ConfigureAwait(false);
+    }
+
+    /// <summary>Restores a heal skill's SP, HP or both on one fighter, or puts its regeneration on.</summary>
+    /// <param name="battle">The battle.</param>
+    /// <param name="healed">The fighter healed.</param>
+    /// <param name="skill">The heal skill (type 6 SP, 7 HP, 14 both).</param>
+    /// <param name="amount">The amount the caster heals.</param>
+    /// <returns>The values shown on the fighter, the HP and SP restored, and whether the heal counts for skill training.</returns>
+    private static (List<FighterValue> Values, int Hp, int Sp, bool Took) Heal(Battle battle, Fighter healed, SkillRecord skill, int amount)
+    {
+        List<FighterValue> values = [];
+        var regeneration = skill.Type == 7 && skill.Effect == StatusRules.Regeneration;
+        var hadRegeneration = regeneration && healed.HasEffect(skill.Effect);
+        var hp = skill.Type is 7 or 14 ? Math.Min(amount, healed.MaxHp - healed.Hp) : 0;
+        var sp = skill.Type is 6 or 14 ? Math.Min(amount, healed.MaxSp - healed.Sp) : 0;
+        healed.Hp += hp;
+        healed.Sp += sp;
+        if (regeneration)
+        {
+            AddStatus(battle, healed, skill, 232, amount / 2);
+            values.Add(new FighterValue(232, hp, Negative: false));
+        }
+        else
+        {
+            if (skill.Type is 7 or 14)
+                values.Add(new FighterValue(BattleMessages.AttrHp, hp, Negative: false));
+            if (skill.Type is 6 or 14)
+                values.Add(new FighterValue(BattleMessages.AttrSp, sp, Negative: false));
+        }
+        return (values, hp, sp, hp + sp > 0 || (regeneration && !hadRegeneration));
     }
 
     /// <summary>Records a debuff cast on an enemy or a buff put on an ally, for the caster's damage burst.</summary>
