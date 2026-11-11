@@ -172,8 +172,18 @@ public sealed class Fighter
     /// <summary>The total damage done to this monster by combinations of two or more attackers.</summary>
     public long ComboDamage { get; set; }
 
-    /// <summary>The debuff effect bytes the fighter carried when it fell, kept for the damage burst; null while it is alive.</summary>
-    public List<byte>? DebuffsAtDeath { get; set; }
+    /// <summary>The distinct debuff effect bytes this fighter cast on enemies, hit or missed, for the damage burst.</summary>
+    public HashSet<byte> DebuffsCast { get; } = [];
+
+    /// <summary>The buff effect bytes this fighter put on allies and who got them, for the damage burst.</summary>
+    public HashSet<(byte Effect, Fighter Target)> BuffsGiven { get; } = [];
+
+    /// <summary>True once this fighter has done damage to an enemy in this battle.</summary>
+    public bool DealtDamage { get; set; }
+
+    /// <summary>Counts the distinct debuffs this fighter cast plus the distinct buffs it put on allies who then did damage.</summary>
+    public int BurstEffectCount =>
+        DebuffsCast.Count + BuffsGiven.Where(b => b.Target.DealtDamage).Select(b => b.Effect).Distinct().Count();
 
     /// <summary>True when the player cast a buff on their own pet during this battle.</summary>
     public bool BuffedPet { get; set; }

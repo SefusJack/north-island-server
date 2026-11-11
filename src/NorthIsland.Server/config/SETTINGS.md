@@ -32,10 +32,8 @@ The keys below are in the `Server` section unless they name another one. The sec
 | `ElementDisadvantageMultiplier` | The damage factor when the target's element overcomes the attacker's |
 | `DropToKillingBlowOnly` | True when only the fighters of the felling blow roll a monster's drops, instead of every winner |
 | `BurstMaxLevel` | The highest level that still earns burst experience |
-| `BurstablePetPercent` | The percent of the player's burst experience a burstable pet earns |
-| `BurstDebuffBasePercent` | The percent of the combination damage paid as burst experience for a monster that fell without a debuff |
-| `BurstDebuffStepPercent` | The percent added to that for each distinct debuff the monster carried when it fell |
-| `BurstDebuffSteps` | The most debuffs that count towards the burst experience |
+| `BurstDebuffBasePercent` | The percent of the combination damage paid as burst experience to a fighter who cast no debuff or buff |
+| `BurstDebuffStepPercent` | The percent added to that for each distinct debuff the fighter cast (hit or missed) and each distinct buff it put on an ally who did damage |
 | `CussDamagePercent` | The percent more damage a target under Cuss takes |
 | `ShrinkDamagePercent` | The percent more damage a target under Shrink takes |
 | `FreezeDamagePercent` | The percent more damage a frozen target takes |

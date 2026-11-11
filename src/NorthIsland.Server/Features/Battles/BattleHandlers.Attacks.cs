@@ -58,6 +58,8 @@ public sealed partial class BattleHandlers
                 break;
             default: // other support skills: put a status on the target
                 var attr = StatusRules.AttrFor(skill.Effect, target);
+                if (player.IsHuman && attr != 0)
+                    NoteBurstEffect(player, target, skill.Effect);
                 hit = attr != 0 && (target.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
                 if (hit)
                 {
@@ -79,6 +81,21 @@ public sealed partial class BattleHandlers
         logger.LogInformation("[{Session}] {Player} uses {Skill} ({Cost} SP, {Sp} left) on {Target}: {What}", session.Id, player.Name,
             skill.Name, skill.SpCost, player.Sp, target.Name, what);
         await ActionPause(skill.Id, player, target).ConfigureAwait(false);
+    }
+
+    /// <summary>Records a debuff cast on an enemy or a buff put on an ally, for the caster's damage burst.</summary>
+    /// <param name="caster">The player or pet who used the status skill.</param>
+    /// <param name="target">The fighter it was used on.</param>
+    /// <param name="effect">The Skill.dat effect byte.</param>
+    private static void NoteBurstEffect(Fighter caster, Fighter target, byte effect)
+    {
+        if (target.Side != caster.Side)
+        {
+            if (StatusRules.IsDebuffEffect(effect))
+                caster.DebuffsCast.Add(effect);
+        }
+        else if (!StatusRules.IsDebuffEffect(effect))
+            caster.BuffsGiven.Add((effect, target));
     }
 
     /// <summary>Puts a status on a target, replacing a status that uses the same attribute.</summary>
@@ -150,7 +167,7 @@ public sealed partial class BattleHandlers
         if (target is null)
             return;
         var (damage, critical, missed) = HitTarget(player, target, skill, combo: false);
-        var rider = missed ? null : RiderStatus(battle, target, skill);
+        var rider = missed ? null : RiderStatus(battle, player, target, skill);
         var skillId = skill?.Id ?? attack.SkillOrItem;
         battle.Send(client => BattleMessages.Action(player.Row, player.Col, skillId,
             [new ActionTarget(target.Row, target.Col, Hit: !missed, Guard: 0, BlowValues(damage, critical, missed, rider))], client));
@@ -219,6 +236,8 @@ public sealed partial class BattleHandlers
         var wasAlive = target.IsAlive;
         target.Hp = Math.Max(0, target.Hp - damage);
         NoteAction(player, target, damage);
+        if (damage > 0)
+            player.DealtDamage = true;
         if (wasAlive && !target.IsAlive)
             CreditKill(player, target);
         if (player.HalvesTargetSp && skill is null or { Type: 1 } && target.Sp > 0)
@@ -231,14 +250,16 @@ public sealed partial class BattleHandlers
 
     /// <summary>Rolls the extra status that the Fervidity skill may put on a target it hit.</summary>
     /// <param name="battle">The battle.</param>
+    /// <param name="attacker">The fighter who used the skill, credited with the status for the damage burst.</param>
     /// <param name="target">The fighter hit.</param>
     /// <param name="skill">The skill used, or null.</param>
     /// <returns>The status value to show in the action, or null when none was put on.</returns>
-    private FighterValue? RiderStatus(Battle battle, Fighter target, SkillRecord? skill)
+    private FighterValue? RiderStatus(Battle battle, Fighter attacker, Fighter target, SkillRecord? skill)
     {
         if (skill is not { Id: SkillTable.Fervidity } || !target.IsAlive || GameRandom.Shared.NextDouble() * 100 >= options.Value.FervidityMessPercent
             || StatusRules.AttrFor(skill.Effect, target) is not (> 0 and var attr))
             return null;
+        NoteBurstEffect(attacker, target, skill.Effect);
         AddStatus(battle, target, skill, attr, 0);
         return new FighterValue(attr, 0, Negative: false);
     }
@@ -259,12 +280,11 @@ public sealed partial class BattleHandlers
         return values;
     }
 
-    /// <summary>Records that an attacker took part in felling a target and which debuffs the target carried.</summary>
+    /// <summary>Records that an attacker took part in felling a target.</summary>
     /// <param name="attacker">The fighter who delivered the blow.</param>
     /// <param name="target">The fighter who fell.</param>
     private static void CreditKill(Fighter attacker, Fighter target)
     {
-        target.DebuffsAtDeath ??= StatusRules.DebuffEffects(target);
         target.KilledBy.Add(attacker);
     }
 
@@ -354,7 +374,7 @@ public sealed partial class BattleHandlers
                     Spend(attacker, skill);
                 (damage, critical, missed) = HitTarget(attacker, target, skill, combo: true);
                 if (!missed)
-                    rider = RiderStatus(battle, target, skill);
+                    rider = RiderStatus(battle, attacker, target, skill);
                 trained.Add((attacker, skill, SkillData.BlowExp(target.Level, target.MaxHp, damage)));
             }
             else

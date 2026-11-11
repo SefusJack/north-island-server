@@ -410,35 +410,23 @@ public static class BattleFormulas
 
     /// <summary>The experience a fighter earns from the combination damage dealt to the monsters (bursting).</summary>
     /// <param name="monsters">The monsters of the battle.</param>
-    /// <param name="fighter">The player or pet who earns it.</param>
+    /// <param name="fighter">The player or pet who earns it; its own debuffs and buffs set the percentage.</param>
     /// <param name="fighterLevel">The level used for the maximum level check.</param>
     /// <param name="o">The battle options.</param>
-    /// <returns>The burst experience, 0 when the fighter is above the maximum level, reborn or a pet not on the burstable list.</returns>
+    /// <returns>The burst experience, 0 when the fighter is above the maximum level or reborn.</returns>
     public static double BurstDamageExp(IEnumerable<Fighter> monsters, Fighter fighter, int fighterLevel, BattleOptions o)
     {
-        if (fighterLevel > o.BurstMaxLevel || fighter.Reborn > 0 || (fighter.Kind == 4 && !IsBurstablePet(fighter.Npc, o))) // pet
+        if (fighterLevel > o.BurstMaxLevel || fighter.Reborn > 0)
             return 0;
-        var share = monsters.Where(m => m.Npc is not null && !m.Captured).Sum(m => m.ComboDamage * BurstDamagePercentOf(m, o)) / 100;
-        return fighter.Kind == 4 ? share * Math.Max(0, o.BurstablePetPercent) / 100 : share; // pet
+        return monsters.Where(m => m.Npc is not null && !m.Captured).Sum(m => m.ComboDamage) * BurstDamagePercent(fighter.BurstEffectCount, o) / 100;
     }
 
-    /// <summary>The percentage of a monster's combination damage that is paid as burst experience.</summary>
-    /// <param name="monster">The defeated monster.</param>
-    /// <param name="o">The battle options with the base, the step and the maximum steps.</param>
-    /// <returns>The base percentage plus a step for each distinct debuff the monster carried when it fell, never below 0.</returns>
-    public static double BurstDamagePercentOf(Fighter monster, BattleOptions o) =>
-        Math.Max(
-            0,
-            o.BurstDebuffBasePercent
-                + o.BurstDebuffStepPercent * Math.Min((monster.DebuffsAtDeath ?? StatusRules.DebuffEffects(monster)).Count, Math.Max(0, o.BurstDebuffSteps)));
-
-    /// <summary>Tells whether a pet is on the burstable list.</summary>
-    /// <param name="npc">The pet's record, or null.</param>
-    /// <param name="o">The battle options with the list of ids and names.</param>
-    /// <returns>True when the pet's id or name is listed.</returns>
-    public static bool IsBurstablePet(NpcRecord? npc, BattleOptions o) =>
-        npc is not null && o.BurstablePets.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .Any(e => ushort.TryParse(e, out var id) ? id == npc.Id : string.Equals(e, npc.Name, StringComparison.OrdinalIgnoreCase));
+    /// <summary>The percentage of the combination damage that is paid to a fighter as burst experience.</summary>
+    /// <param name="effects">The distinct debuffs the fighter cast plus the distinct buffs it put on allies who did damage.</param>
+    /// <param name="o">The battle options with the base and the step.</param>
+    /// <returns>The base percentage plus a step for each effect, never below 0.</returns>
+    public static double BurstDamagePercent(int effects, BattleOptions o) =>
+        Math.Max(0, o.BurstDebuffBasePercent + o.BurstDebuffStepPercent * effects);
 
     /// <summary>Rolls the gold a monster pays.</summary>
     /// <param name="npc">The monster's record.</param>

@@ -101,15 +101,10 @@ public static class StatusRules
         ? status.Attr is Control or Shield or Debuff or Debuff2
         : status.Effect == effect;
 
-    /// <summary>Whether a status counts as a debuff for the damage burst.</summary>
-    /// <param name="status">The status to test.</param>
-    /// <returns>True for the control and debuff slots.</returns>
-    public static bool IsDebuff(FighterStatus status) => status.Attr is Control or Debuff or Debuff2;
-
-    /// <summary>Lists the distinct debuff effect bytes on a fighter.</summary>
-    /// <param name="f">The fighter.</param>
-    /// <returns>The effect bytes of its debuff statuses.</returns>
-    public static List<byte> DebuffEffects(Fighter f) => [.. f.Statuses.Where(IsDebuff).Select(s => s.Effect).Distinct()];
+    /// <summary>Whether a skill effect counts as a debuff for the damage burst.</summary>
+    /// <param name="effect">The Skill.dat effect byte.</param>
+    /// <returns>True for the effects that go into the control and debuff slots.</returns>
+    public static bool IsDebuffEffect(byte effect) => effect is >= 1 and <= 50 or >= 171 and <= 240;
 
     /// <summary>Whether a fighter loses its turn because of a status.</summary>
     /// <param name="f">The fighter.</param>
