@@ -117,20 +117,11 @@ public sealed class BattleOptions
     /// <summary>The highest level that still earns burst experience.</summary>
     public int BurstMaxLevel { get; set; } = 180;
 
-    /// <summary>The percent of the player's burst experience a burstable pet earns.</summary>
-    public double BurstablePetPercent { get; set; } = 100.0 / 3;
-
-    /// <summary>The percent of the combination damage paid as burst experience for a monster that fell without a debuff.</summary>
+    /// <summary>The percent of the combination damage paid as burst experience to a fighter who cast no debuff or buff.</summary>
     public double BurstDebuffBasePercent { get; set; } = 35;
 
-    /// <summary>The percent added to that for each distinct debuff the monster carried when it fell.</summary>
+    /// <summary>The percent added to that for each distinct debuff the fighter cast and each distinct buff it put on an ally who did damage.</summary>
     public double BurstDebuffStepPercent { get; set; } = 15;
-
-    /// <summary>The most debuffs that count towards the burst experience.</summary>
-    public int BurstDebuffSteps { get; set; } = 3;
-
-    /// <summary>The pets that earn burst experience, comma separated Npc names or ids.</summary>
-    public string BurstablePets { get; set; } = "Xaolan, Shasha, Eva, Venus, Qlaya, Sam, Victoria, Magellan, Deadly Flower";
 
     /// <summary>The skills that add their Skill.dat power to their damage, comma separated ids.</summary>
     public string PowerDamageSkills { get; set; } = "25067, 15017, 12024";
