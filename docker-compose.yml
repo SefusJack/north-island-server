@@ -1,5 +1,6 @@
 # The server with its accounts in PostgreSQL: docker compose up -d --build.
-# Settings go in a .env file next to this one: POSTGRES_PASSWORD (required), GAMEDATA (the folder of the client's data files), POSTGRES_PORT.
+# Settings go in a .env file next to this one: POSTGRES_PASSWORD (required), GAMEDATA (the folder of the client's data files), POSTGRES_PORT,
+# GM_ACCOUNTS (account names, separated by commas, made GMs when they log in).
 name: north-island
 
 services:
@@ -27,6 +28,7 @@ services:
         condition: service_healthy
     environment:
       Database__Provider: Postgres
+      Server__GmAccounts: ${GM_ACCOUNTS:-}
       ConnectionStrings__Accounts: Host=db;Database=northisland;Username=northisland;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in a .env file next to docker-compose.yml}
     ports:
       - "6414:6414"     # game
@@ -35,6 +37,7 @@ services:
       - ${GAMEDATA:-./gamedata}:/gamedata:ro
       - server-data:/app/data     # JSON files to import on the first start; everything is saved in the database
       - server-logs:/app/logs
+      # - ./config:/app/config    # the settings outside the image; files missing there are filled in with the defaults at start
     stop_grace_period: 30s        # a stop saves everyone online first
     restart: unless-stopped
 

@@ -28,8 +28,8 @@ This makes a single program that runs on 64-bit Windows without .NET installed:
 dotnet publish src/NorthIsland.Server/NorthIsland.Server.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o out/publish/win-x64
 ```
 
-Copy the `out/publish/win-x64` folder anywhere and run `NorthIsland.Server.exe`. Keep the `.json` files and the `config`
-folder next to it, because those are its settings. Once the folder is outside this one, `data/` and `logs/` are created
+Copy the `out/publish/win-x64` folder anywhere and run `NorthIsland.Server.exe`. Keep the `config` folder next to it,
+because that holds its settings. Once the folder is outside this one, `data/` and `logs/` are created
 next to the program.
 
 ## Game data
@@ -37,7 +37,7 @@ next to the program.
 The server looks for the client's data files in this order and stops with an error if it finds none:
 
 1. the folder given with `--data`
-2. the `Server__GameDataDirectory` environment variable, then `Server:GameDataDirectory` in `appsettings.json`
+2. the `Server__GameDataDirectory` environment variable, then `Server:GameDataDirectory` in `config/appsettings.json`
 3. the folder of the server program, then this folder
 4. `Program Files (x86)\Wonderland Online` on Windows
 
@@ -49,9 +49,9 @@ dotnet run --project src/NorthIsland.Server -- --data "C:\Games\Wonderland Onlin
 
 ## Settings and saved data
 
-The essentials and simple modifiers are in `src/NorthIsland.Server/appsettings.json`. The rest of the tuning is in
-`battle.json`, `progression.json`, `world.json` and `mall.json` in `src/NorthIsland.Server/config/`.
-What each setting does is in the `SETTINGS.md` file next to it.
+Every settings file is in `src/NorthIsland.Server/config/`. The essentials and simple modifiers are in `appsettings.json`,
+and the rest of the tuning is in `battle.json`, `progression.json`, `world.json` and `mall.json`. The event calendar is
+`events.json` and the Q&A questions are `quiz.json`. What each setting does is in the `SETTINGS.md` file in the same folder.
 
 Accounts are written to `data/accounts/<name>.json` and the log to `logs/server-yyyyMMdd.log`. Unknown accounts are
 created on first login (`AutoRegister`).
@@ -68,6 +68,17 @@ This runs the server with a PostgreSQL container. Put the client's `data` folder
 `GAMEDATA` in a `.env` file next to `docker-compose.yml`. `POSTGRES_PASSWORD` is required in that file, and Docker will
 not start without it. Set `POSTGRES_PORT` there too if 5432 is taken.
 
+The settings are built into the image. To change them without rebuilding, mount a folder on `/app/config`:
+
+```yaml
+    volumes:
+      - ./config:/app/config
+```
+
+When the server starts, it copies the default of any settings file the folder lacks, so an empty folder is filled with
+all of them. The folder must be writable by the user the container runs as. Files already there are left alone, so after
+an update new settings in a file you keep only take effect once you add them to it. Restart the server after editing.
+
 ## Point the client at it
 
 Work on a copy of the game folder and replace its `SERVER.INI` with:
@@ -83,8 +94,19 @@ Start the client, choose the "Local" group and server, and log in with any 4 to 
 
 ### Make the first GM
 
-The first GM has to be set by hand, because only a GM can make other GMs. The server reads accounts when it starts and
-writes them back while it runs, so make the change while it is stopped.
+The easiest way is the `Server__GmAccounts` environment variable: a list of account names, separated by commas. Those
+accounts are made GMs the next time they log in. With Docker, put this in the `.env` file next to `docker-compose.yml`
+and run `docker compose up -d` again:
+
+```
+GM_ACCOUNTS=youraccount
+```
+
+Without Docker, set `Server__GmAccounts` before starting the server, or set `GmAccounts` in `config/appsettings.json`. Taking a
+name off the list does not take GM away; use `/deop` for that.
+
+You can also set it by hand. The server reads accounts when it starts and writes them back while it runs, so make the
+change while it is stopped.
 
 1. Log in once with the account you want to use, so that it exists.
 2. Stop the server.
