@@ -14,6 +14,9 @@ public static class Gems
     /// <summary>Item sub type of the weapons that have a critical chance of their own; they take no critical stone.</summary>
     public const byte CriticalSubType = 137;
 
+    /// <summary>Item flag of the item-mall equipment (the +1 to +10 weapons, the Kung-Fu Suits, ...): "can be enhanced but not socketed".</summary>
+    public const ushort MallFlag = 0x200;
+
     /// <summary>Item sub type of the class manteaus, the only accessories that take a stone.</summary>
     public const byte ManteauSubType = 142;
 
@@ -38,6 +41,8 @@ public static class Gems
             return equipment.SubType == ManteauSubType ? GemRefusal.None : GemRefusal.SpecialItem;
         if (equipment.Type == GunType)
             return GemRefusal.Gun;
+        if ((equipment.Flags & MallFlag) != 0)
+            return GemRefusal.MallEquipment;
         if (stone.Type == CriticalStoneType)
             return equipment.EquipSlot != WeaponSlot
                 ? GemRefusal.NotWeapon
