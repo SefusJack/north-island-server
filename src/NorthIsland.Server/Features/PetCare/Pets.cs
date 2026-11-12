@@ -64,7 +64,8 @@ public static class Pets
 
     /// <summary>
     /// Raises a pet to a higher level: each level gives its points one at a time to a random ability that is still below the cap of the pet's
-    /// potential (its potential floor plus <see cref="ItemEffectHandlers.PetAbilityRoom"/>), then HP and SP are recalculated and refilled.
+    /// potential (its potential floor plus <see cref="ItemEffectHandlers.PetAbilityRoom"/>), with each ability's chance in proportion to its
+    /// current value (a pet with INT 50 and AGI 1 puts a point on AGI 1 time in 51), then HP and SP are recalculated and refilled.
     /// </summary>
     /// <param name="pet">The pet.</param>
     /// <param name="level">The new level; nothing happens when it is not above the current one.</param>
@@ -91,7 +92,23 @@ public static class Pets
             var room = Enumerable.Range(0, abilities.Length).Where(a => abilities[a] < cap).ToList();
             if (room.Count == 0)
                 break;
-            abilities[room[roll(room.Count)]]++;
+            // a number below the sum of the open abilities picks the ability whose share it falls in; all at 0 share equally
+            var weight = room.Sum(a => abilities[a]);
+            var pick = weight == 0 ? room[roll(room.Count)] : room[0];
+            if (weight > 0)
+            {
+                var at = roll(weight);
+                foreach (var a in room)
+                {
+                    if (at < abilities[a])
+                    {
+                        pick = a;
+                        break;
+                    }
+                    at -= abilities[a];
+                }
+            }
+            abilities[pick]++;
         }
         (pet.Strength, pet.Constitution, pet.Intelligence, pet.Wisdom, pet.Agility) =
             (abilities[0], abilities[1], abilities[2], abilities[3], abilities[4]);
