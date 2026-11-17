@@ -143,6 +143,9 @@ public sealed class GameSession : IAsyncDisposable
     /// <summary>True while auto play is on for the player.</summary>
     public bool AutoPlay { get; set; }
 
+    /// <summary>True from when the owner's client was asked for its saved house song (<c>62/59</c> sub 2) until it answers.</summary>
+    public bool HouseSongAsked { get; set; }
+
     /// <summary>Gives the per-session state object of a feature, creating it on first use.</summary>
     /// <typeparam name="T">The state class; it needs a parameterless constructor.</typeparam>
     /// <returns>The state object of this session.</returns>
