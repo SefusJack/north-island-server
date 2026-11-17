@@ -209,6 +209,7 @@ public sealed partial class BattleHandlers
         pet?.Left = true;
         if (ReferenceEquals(player, battle.Player) && session.Event is { } run)
             run.BattleOutcome = outcome;
+        TrojanRoundWon(session, battle, player, outcome);
 
         if (session.ActiveCharacter is { } character)
         {
