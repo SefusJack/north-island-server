@@ -72,7 +72,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `DropToKillingBlowOnly` | True when only the fighters of the felling blow roll a monster's drops, instead of every winner |
 | `BurstMaxLevel` | The highest level that still earns burst experience |
 | `BurstDebuffBasePercent` | The percent of the combination damage paid as burst experience to a fighter who cast no debuff or buff |
-| `BurstDebuffStepPercent` | The percent added to that for each distinct debuff the fighter cast (hit or missed) and each distinct buff it put on an ally who did damage |
+| `BurstDebuffStepPercent` | The percent added to that for each distinct debuff the fighter cast on a monster (hit or missed; counted for that monster's combination damage) and each distinct buff it put on an ally who did damage (once a battle, for every monster) |
 | `CussDamagePercent` | The percent more damage a target under Cuss takes |
 | `ShrinkDamagePercent` | The percent more damage a target under Shrink takes |
 | `FreezeDamagePercent` | The percent more damage a frozen target takes |

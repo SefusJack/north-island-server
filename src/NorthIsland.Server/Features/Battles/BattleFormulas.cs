@@ -432,7 +432,10 @@ public static class BattleFormulas
 
     /// <summary>The experience a fighter earns from the combination damage dealt to the monsters (bursting).</summary>
     /// <param name="monsters">The monsters of the battle.</param>
-    /// <param name="fighter">The player or pet who earns it; its own debuffs and buffs set the percentage.</param>
+    /// <param name="fighter">
+    /// The player or pet who earns it; for each monster, the debuffs it cast on that monster and the buffs it gave in the battle set the
+    /// percentage of that monster's combination damage.
+    /// </param>
     /// <param name="fighterLevel">The level used for the maximum level check.</param>
     /// <param name="o">The battle options.</param>
     /// <returns>The burst experience, 0 when the fighter is above the maximum level or reborn.</returns>
@@ -440,11 +443,12 @@ public static class BattleFormulas
     {
         if (fighterLevel > o.BurstMaxLevel || fighter.Reborn > 0)
             return 0;
-        return monsters.Where(m => m.Npc is not null && !m.Captured).Sum(m => m.ComboDamage) * BurstDamagePercent(fighter.BurstEffectCount, o) / 100;
+        return monsters.Where(m => m.Npc is not null && !m.Captured)
+            .Sum(m => m.ComboDamage * BurstDamagePercent(fighter.BurstEffectCountOn(m), o) / 100);
     }
 
     /// <summary>The percentage of the combination damage that is paid to a fighter as burst experience.</summary>
-    /// <param name="effects">The distinct debuffs the fighter cast plus the distinct buffs it put on allies who did damage.</param>
+    /// <param name="effects">The distinct debuffs the fighter cast on the monster plus the distinct buffs it put on allies who did damage.</param>
     /// <param name="o">The battle options with the base and the step.</param>
     /// <returns>The base percentage plus a step for each effect, never below 0.</returns>
     public static double BurstDamagePercent(int effects, BattleOptions o) =>
