@@ -140,7 +140,8 @@ public sealed partial class BattleHandlers
         var defeated = battle.Standalone ? []
             : battle.Monsters.Where(m => m.Npc is not null && !m.Captured).Select(m => m.Npc!).ToList();
         var o = options.Value;
-        int Share(Fighter? f, int level) => f is null || battle.Standalone ? 0 : BattleFormulas.ExpShare(battle.Monsters, f, level, o, winPlate);
+        int Share(Fighter? f, int level) =>
+            f is null || battle.Standalone ? 0 : BattleFormulas.ExpShare(battle.Monsters, f, level, o, formulas.Table, winPlate);
         var seasonalFactor = BattleFormulas.CappedExpMultipliers(calendar.ExpMultiplier(), 1, o.ExpMultiplierCap).Seasonal;
         int Seasonal(int rawExp) => (int)Math.Min(int.MaxValue, Math.Round(rawExp * seasonalFactor));
 

@@ -75,16 +75,49 @@ public sealed class BattleOptions
     /// <summary>How many seconds after a battle a player cannot be drawn into a new fight.</summary>
     public int BattleImmunitySeconds { get; set; } = 5;
 
-    /// <summary>The base term of the experience a monster pays.</summary>
+    /// <summary>Which formula decides the experience a monster pays: the classic monster-level terms or a share of the fighter's level.</summary>
+    public ExpMode ExpMode { get; set; } = ExpMode.Classic;
+
+    /// <summary>The base term of the kills a first-run fighter (no rebirth) needs per level in level-share mode.</summary>
+    public double KillsPerLevelBase { get; set; } = 5;
+
+    /// <summary>The factor on the fighter's level raised to <see cref="KillsPerLevelPower"/> in the kills per level of a first-run fighter.</summary>
+    public double KillsPerLevelCoef { get; set; } = 0.5;
+
+    /// <summary>The power the fighter's level is raised to in the kills per level of a first-run fighter.</summary>
+    public double KillsPerLevelPower { get; set; } = 2;
+
+    /// <summary>The base term of the kills a reborn fighter needs per level in level-share mode.</summary>
+    public double RebornKillsPerLevelBase { get; set; } = 5;
+
+    /// <summary>The factor on the fighter's level raised to <see cref="RebornKillsPerLevelPower"/> in the kills per level of a reborn fighter.</summary>
+    public double RebornKillsPerLevelCoef { get; set; } = 1.13;
+
+    /// <summary>The power the fighter's level is raised to in the kills per level of a reborn fighter.</summary>
+    public double RebornKillsPerLevelPower { get; set; } = 2;
+
+    /// <summary>The percent more experience per level a monster is above the fighter, in level-share mode; 0 or more.</summary>
+    public double FightUpBonusPerLevelPercent { get; set; } = 1.5;
+
+    /// <summary>The largest percent more experience a monster above the fighter pays, in level-share mode; 0 or more.</summary>
+    public double FightUpBonusMaxPercent { get; set; } = 50;
+
+    /// <summary>
+    /// The highest fighter level used when a fighter above a monster is compared with it for experience, in both modes; a monster
+    /// above the fighter's real level is still measured from that level. 0 or less turns it off.
+    /// </summary>
+    public int LevelGapCeiling { get; set; } = 165;
+
+    /// <summary>The base term of the experience a monster pays (classic mode).</summary>
     public double MonsterExpBase { get; set; } = 1.5;
 
-    /// <summary>The experience term a monster pays per monster level.</summary>
+    /// <summary>The experience term a monster pays per monster level (classic mode).</summary>
     public double MonsterExpPerLevel { get; set; } = 0.5;
 
-    /// <summary>The experience term added per level the monster is above the fighter.</summary>
+    /// <summary>The experience term added per level the monster is above the fighter (classic mode).</summary>
     public double ExpPerLevelUnderMonster { get; set; } = 1.2;
 
-    /// <summary>The experience term subtracted per level the monster is below the fighter.</summary>
+    /// <summary>The experience term subtracted per level the monster is below the fighter (classic mode).</summary>
     public double ExpPerLevelOverMonster { get; set; } = 0.6;
 
     /// <summary>The share of a monster's experience a fighter earns for felling it alone.</summary>
