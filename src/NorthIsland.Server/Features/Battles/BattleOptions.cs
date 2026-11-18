@@ -132,6 +132,9 @@ public sealed class BattleOptions
     /// <summary>The chance in percent that a Fervidity hit puts mess on a target it left standing.</summary>
     public double FervidityMessPercent { get; set; } = 14;
 
+    /// <summary>Which control and debuff statuses can be on an enemy at the same time: one of each kind, or one in all.</summary>
+    public DebuffStacking DebuffStacking { get; set; }
+
     /// <summary>The percent more damage a target under Cuss takes.</summary>
     public double CussDamagePercent { get; set; } = 50;
 
