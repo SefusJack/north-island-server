@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using NorthIsland.GameData.Formulas;
 using NorthIsland.GameData.Npcs;
 using NorthIsland.GameData.Skills;
 
@@ -264,18 +265,70 @@ public static class BattleFormulas
     /// <returns>A tenth of the fighter's maximum HP, at least 1.</returns>
     public static int PoisonDamage(Fighter target) => Math.Max(1, target.MaxHp / 10);
 
-    /// <summary>The experience one monster pays before the action factor.</summary>
+    /// <summary>The experience one monster pays before the action factor, by the formula <see cref="BattleOptions.ExpMode"/> picks.</summary>
     /// <param name="monsterLevel">The monster's level.</param>
     /// <param name="fighterLevel">The level of the fighter who earns it.</param>
+    /// <param name="fighterReborn">The rebirths of the fighter who earns it; picks the level curve in level-share mode.</param>
+    /// <param name="o">The battle options with the experience terms.</param>
+    /// <param name="table">The formula table with the level curve, or null, which falls back to the classic formula.</param>
+    /// <returns>The experience before the action factor.</returns>
+    public static double MonsterExp(int monsterLevel, int fighterLevel, int fighterReborn, BattleOptions o, FormulaTable? table) =>
+        o.ExpMode == ExpMode.LevelShare && table is not null
+            ? LevelShareMonsterExp(monsterLevel, fighterLevel, fighterReborn, o, table)
+            : ClassicMonsterExp(monsterLevel, fighterLevel, o);
+
+    /// <summary>The experience one monster pays before the action factor by the classic formula.</summary>
+    /// <param name="monsterLevel">The monster's level.</param>
+    /// <param name="fighterLevel">The level of the fighter who earns it, capped at <see cref="BattleOptions.LevelGapCeiling"/> for the gap.</param>
     /// <param name="o">The battle options with the experience terms.</param>
     /// <returns>The base value from the monster's level and the level gap, scaled down when the fighter is far above the monster.</returns>
-    public static double MonsterExp(int monsterLevel, int fighterLevel, BattleOptions o)
+    public static double ClassicMonsterExp(int monsterLevel, int fighterLevel, BattleOptions o)
     {
-        var under = Math.Max(0, monsterLevel - fighterLevel);
-        var over = Math.Max(0, fighterLevel - monsterLevel);
+        var level = GapLevel(fighterLevel, o);
+        var under = Math.Max(0, monsterLevel - level);
+        var over = Math.Max(0, level - monsterLevel);
         var k = Math.Max(1, o.MonsterExpBase + o.MonsterExpPerLevel * monsterLevel + o.ExpPerLevelUnderMonster * under - o.ExpPerLevelOverMonster * over);
-        return k * LevelGapScale(fighterLevel, monsterLevel, o.LevelGapFullUpTo, o.LevelGapZeroFrom);
+        return k * LevelGapScale(level, monsterLevel, o.LevelGapFullUpTo, o.LevelGapZeroFrom);
     }
+
+    /// <summary>
+    /// The experience one monster pays before the action factor in level-share mode: the experience the fighter needs for its next
+    /// level divided by the kills per level, times the fight-up bonus or the level gap scale.
+    /// </summary>
+    /// <param name="monsterLevel">The monster's level.</param>
+    /// <param name="fighterLevel">The level of the fighter who earns it.</param>
+    /// <param name="fighterReborn">The rebirths of the fighter; 0 uses the first-run curve and kills, any other value the reborn ones.</param>
+    /// <param name="o">The battle options with the kills per level and the bonus terms.</param>
+    /// <param name="table">The formula table with the level curve.</param>
+    /// <returns>The experience before the action factor.</returns>
+    public static double LevelShareMonsterExp(int monsterLevel, int fighterLevel, int fighterReborn, BattleOptions o, FormulaTable table)
+    {
+        var level = GapLevel(fighterLevel, o);
+        var gap = monsterLevel > level
+            ? 1 + Math.Min(o.FightUpBonusMaxPercent, o.FightUpBonusPerLevelPercent * (monsterLevel - level)) / 100
+            : LevelGapScale(level, monsterLevel, o.LevelGapFullUpTo, o.LevelGapZeroFrom);
+        return (double)table.LevelUpExp(fighterLevel + 1, fighterReborn) / KillsPerLevel(fighterLevel, fighterReborn, o) * gap;
+    }
+
+    /// <summary>How many solo kills of a monster at the fighter's level a level takes in level-share mode.</summary>
+    /// <param name="level">The fighter's level.</param>
+    /// <param name="reborn">The fighter's rebirths; 0 uses the first-run terms, any other value the reborn terms.</param>
+    /// <param name="o">The battle options with the kills per level terms.</param>
+    /// <returns>Base + Coef * level ^ Power, at least 1.</returns>
+    public static double KillsPerLevel(int level, int reborn, BattleOptions o)
+    {
+        var kills = reborn > 0
+            ? o.RebornKillsPerLevelBase + o.RebornKillsPerLevelCoef * Math.Pow(level, o.RebornKillsPerLevelPower)
+            : o.KillsPerLevelBase + o.KillsPerLevelCoef * Math.Pow(level, o.KillsPerLevelPower);
+        return Math.Max(1, kills);
+    }
+
+    /// <summary>The fighter level compared with a monster's level for experience.</summary>
+    /// <param name="fighterLevel">The fighter's level.</param>
+    /// <param name="o">The battle options with <see cref="BattleOptions.LevelGapCeiling"/>.</param>
+    /// <returns>The fighter's level, capped at the ceiling when the ceiling is above 0.</returns>
+    public static int GapLevel(int fighterLevel, BattleOptions o) =>
+        o.LevelGapCeiling > 0 ? Math.Min(fighterLevel, o.LevelGapCeiling) : fighterLevel;
 
     /// <summary>How much of a monster's experience a fighter earns, by what they did to it.</summary>
     /// <param name="monster">The monster.</param>
@@ -305,19 +358,25 @@ public static class BattleFormulas
     /// <summary>Adds up the experience a fighter earns from the monsters of a won battle.</summary>
     /// <param name="monsters">The monsters of the battle.</param>
     /// <param name="fighter">The player or pet who earns the experience.</param>
-    /// <param name="fighterLevel">The level used for the level gap.</param>
+    /// <param name="fighterLevel">The fighter's level, used for the level gap and in level-share mode for the level curve.</param>
+    /// <param name="fighterReborn">The fighter's rebirths, which pick the level curve in level-share mode.</param>
     /// <param name="o">The battle options.</param>
+    /// <param name="table">The formula table with the level curve, or null, which falls back to the classic formula.</param>
     /// <param name="winPlate">The fighter who used the win plate, or null.</param>
     /// <returns>The whole experience points.</returns>
     public static int ExpShare(
         IEnumerable<Fighter> monsters,
         Fighter fighter,
         int fighterLevel,
+        int fighterReborn,
         BattleOptions o,
+        FormulaTable? table,
         Fighter? winPlate = null)
     {
         var total = monsters.Where(m => m.Npc is not null && !m.Captured)
-            .Sum(m => ActionFactor(m, fighter, o, winPlate) is var factor and > 0 ? factor * MonsterExp(m.Npc!.Level, fighterLevel, o) : 0);
+            .Sum(m => ActionFactor(m, fighter, o, winPlate) is var factor and > 0
+                ? factor * MonsterExp(m.Npc!.Level, fighterLevel, fighterReborn, o, table)
+                : 0);
         return (int)Math.Min(int.MaxValue, Math.Round(Math.Round(total, 6), MidpointRounding.AwayFromZero));
     }
 
