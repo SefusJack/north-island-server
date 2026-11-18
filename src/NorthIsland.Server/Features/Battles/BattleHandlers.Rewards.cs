@@ -167,10 +167,6 @@ public sealed partial class BattleHandlers
                         o.ExpMultiplierCap).Potion
                 : exp;
             own += DamageBurst(playerFighter, character.Level);
-            // On the Training Island a win pays at least the flat amount, which events and potions do not raise.
-            var flat = TrainingFlatExp(character, defeated) is var floor && floor > own ? floor : 0;
-            if (flat > 0)
-                own = flat;
 
             (Data.Pet Pet, int Exp)? earns = null;
             var buffShareBase = 0;
@@ -187,8 +183,11 @@ public sealed partial class BattleHandlers
                 if ((int)Math.Min(int.MaxValue, Math.Round(petShare * petPotion)) + petBurst is var petExp and > 0)
                     earns = (pet, petExp);
             }
-            if (earns is not null && playerFighter is { BuffedPet: true } && flat == 0)
+            if (earns is not null && playerFighter is { BuffedPet: true })
                 own += BattleFormulas.BuffShare(buffShareBase, o.BuffSharePercent);
+            // On the Training Island every living winner gets the flat amount on top, which events and potions do not raise
+            // (IGG FAQ news aid=2633; forum tid88743: "so long as the battle ends with you being alive, you gain 200 EXP").
+            own += TrainingFlatExp(character, defeated);
             character.Exp = (int)Math.Min(int.MaxValue, (long)character.Exp + (long)Math.Round(own));
             shares.Add((winner, (int)Math.Round(own)));
             winner.Send(InnMessages.SetAttribute(Action8.AttrExp, character.Exp));
@@ -273,7 +272,7 @@ public sealed partial class BattleHandlers
         return monster.DropItem;
     }
 
-    /// <summary>The least experience a Training Island win pays.</summary>
+    /// <summary>The experience a Training Island win adds for a living winner.</summary>
     /// <param name="character">The winner's character.</param>
     /// <param name="defeated">The records of the defeated monsters.</param>
     /// <returns>The flat experience, or 0 when it does not apply.</returns>

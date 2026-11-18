@@ -111,7 +111,7 @@ public sealed class BattleOptions
     /// <summary>The damage factor when the target's element overcomes the attacker's.</summary>
     public double ElementDisadvantageMultiplier { get; set; } = 0.5;
 
-    /// <summary>The least experience a win on the Training Island pays; events and potions do not raise it.</summary>
+    /// <summary>The experience a win on the Training Island adds on top of the normal amount; events and potions do not raise it.</summary>
     public int TrainingIslandFlatExp { get; set; } = 200;
 
     /// <summary>True when only the fighters of the felling blow roll a monster's drops, instead of every winner.</summary>
