@@ -118,7 +118,11 @@ public sealed partial class BattleHandlers
         if (target.Side != caster.Side)
         {
             if (StatusRules.IsDebuffEffect(effect))
-                caster.DebuffsCast.Add(effect);
+            {
+                if (!caster.DebuffsCast.TryGetValue(target, out var debuffs))
+                    caster.DebuffsCast[target] = debuffs = [];
+                debuffs.Add(effect);
+            }
         }
         else if (!StatusRules.IsDebuffEffect(effect))
             caster.BuffsGiven.Add((effect, target));
