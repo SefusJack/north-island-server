@@ -5,7 +5,7 @@
     "KillsPerLevelCoef": 0.5,
     "KillsPerLevelPower": 2,
     "RebornKillsPerLevelBase": 5,
-    "RebornKillsPerLevelCoef": 0.75,
+    "RebornKillsPerLevelCoef": 1.13,
     "RebornKillsPerLevelPower": 2,
     "FightUpBonusPerLevelPercent": 1.5,
     "FightUpBonusMaxPercent": 50,

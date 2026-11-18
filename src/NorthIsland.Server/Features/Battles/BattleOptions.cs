@@ -91,7 +91,7 @@ public sealed class BattleOptions
     public double RebornKillsPerLevelBase { get; set; } = 5;
 
     /// <summary>The factor on the fighter's level raised to <see cref="RebornKillsPerLevelPower"/> in the kills per level of a reborn fighter.</summary>
-    public double RebornKillsPerLevelCoef { get; set; } = 0.75;
+    public double RebornKillsPerLevelCoef { get; set; } = 1.13;
 
     /// <summary>The power the fighter's level is raised to in the kills per level of a reborn fighter.</summary>
     public double RebornKillsPerLevelPower { get; set; } = 2;
