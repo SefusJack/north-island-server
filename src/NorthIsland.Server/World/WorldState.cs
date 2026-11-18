@@ -223,6 +223,7 @@ public sealed class WorldState(
         logger.LogInformation("[{Session}] {Name} warps {From} -> {To} ({X}, {Y}) via convey {Convey}",
             session.Id, character.Name, character.MapId, warp.MapId, warp.X, warp.Y, warp.ConveyIndex);
 
+        session.MapChangeSent(GameClock.UtcNow);
         character.MapId = warp.MapId;
         character.X = warp.X;
         character.Y = warp.Y;
@@ -246,6 +247,7 @@ public sealed class WorldState(
     /// <param name="session">The player's session.</param>
     public void MapLoaded(GameSession session)
     {
+        session.MapChangeLoaded();
         var map = session.ActiveCharacter!.MapId;
         session.Send(PlayerMessages.SceneReady());
         foreach (var other in Others(PlayerId(session)).Where(o => o.ActiveCharacter?.MapId == map))
@@ -259,6 +261,17 @@ public sealed class WorldState(
         TellMapOfTeam(session);
         Arrived?.Invoke(session);
     }
+
+    /// <summary>
+    /// True while the player's client has not yet loaded the map it was latest moved to: a map change (7/x) is sent and its 12/1 has not
+    /// come back. A team member's door or NPC trigger sent before its leader's warp reached it then names a door of the old map; run on
+    /// the new map, it would start that map's door of the same index and warp the member away from the team. The wait is capped so a
+    /// 12/1 that never comes cannot block the player's triggers for good.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <returns>True while the player's latest map change is not yet loaded.</returns>
+    public static bool IsLoadingMap(GameSession session) =>
+        session.IsLoadingMap(GameClock.UtcNow, TimeSpan.FromSeconds(10)); // 10 s: a stale trigger arrives within a round trip of the 7/x
 
     /// <summary>
     /// Tells the players already on the map the team of a player who has just loaded it (13/6 with that one team), so they hide its
