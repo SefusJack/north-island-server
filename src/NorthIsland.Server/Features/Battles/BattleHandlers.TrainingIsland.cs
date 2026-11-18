@@ -23,7 +23,7 @@ public sealed partial class BattleHandlers
     /// <param name="battle">The battle.</param>
     private async Task TrainingIslandHealAsync(GameSession session, Battle battle)
     {
-        if (battle.IsPvp || battle.MapId != TrainingIslandHandlers.IslandMap)
+        if (battle.IsPvp || !TrainingIslandHandlers.IsIslandMap(battle.MapId))
             return;
         List<ActionRecord> records = [];
         List<Fighter> healed = [];
