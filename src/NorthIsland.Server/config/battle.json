@@ -29,6 +29,7 @@
     "BurstMaxLevel": 180,
     "BurstDebuffBasePercent": 0,
     "BurstDebuffStepPercent": 15,
+    "DebuffStacking": "PerKind",
     "CussDamagePercent": 50,
     "ShrinkDamagePercent": 17,
     "FreezeDamagePercent": 6.23,

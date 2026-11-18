@@ -52,7 +52,7 @@ public sealed partial class BattleHandlers
                     var attr = StatusRules.AttrFor(skill.Effect, f);
                     if (player.IsHuman && attr != 0)
                         NoteBurstEffect(player, f, skill.Effect);
-                    hit = attr != 0 && !StatusRules.BlockedByDebuff(attr, player, f)
+                    hit = attr != 0 && !StatusRules.BlockedByDebuff(skill.Effect, attr, player, f, options.Value.DebuffStacking)
                         && (f.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
                     if (hit)
                     {
@@ -72,7 +72,7 @@ public sealed partial class BattleHandlers
         battle.Send(client => BattleMessages.Action(player.Row, player.Col, skill.Id, hits, client));
         if (took)
             TrainSkill(session, player, skill, target.Level);
-        foreach (var (f, s) in removed.Where(r => r.Status.Attr is StatusRules.Debuff2 or 227 or 228))
+        foreach (var (f, s) in removed.Where(r => !StatusRules.ClientCuresItself(r.Status)))
             SendStatusRemoval(battle, f, s);
         logger.LogInformation("[{Session}] {Player} uses {Skill} ({Cost} SP, {Sp} left) on {Target}: {What}", session.Id, player.Name,
             skill.Name, skill.SpCost, player.Sp, target.Name, string.Join("; ", whats));
@@ -297,7 +297,7 @@ public sealed partial class BattleHandlers
     private FighterValue? RiderStatus(Battle battle, Fighter attacker, Fighter target, SkillRecord? skill)
     {
         if (skill is not { Id: SkillTable.Fervidity } || !target.IsAlive || GameRandom.Shared.NextDouble() * 100 >= options.Value.FervidityMessPercent
-            || StatusRules.AttrFor(skill.Effect, target) is not (> 0 and var attr) || StatusRules.BlockedByDebuff(attr, attacker, target))
+            || StatusRules.AttrFor(skill.Effect, target) is not (> 0 and var attr) || StatusRules.BlockedByDebuff(skill.Effect, attr, attacker, target, options.Value.DebuffStacking))
             return null;
         NoteBurstEffect(attacker, target, skill.Effect);
         AddStatus(battle, target, skill, attr, 0);
@@ -644,7 +644,7 @@ public sealed partial class BattleHandlers
             {
                 1 or 2 => null, // damage skills: no support target
                 3 or 15 or 22 => Pick(enemies.Where(f => !f.HasEffect(s.Effect) && StatusRules.AttrFor(s.Effect, f) is > 0 and var a
-                    && !StatusRules.BlockedByDebuff(a, monster, f))), // status skill: a player-side target it can land on
+                    && !StatusRules.BlockedByDebuff(s.Effect, a, monster, f, options.Value.DebuffStacking))), // status skill: a player-side target it can land on
                 4 or 19 => s.TargetType == 3
                     ? (monster.HasEffect(s.Effect) ? null : monster)
                     : Pick(allies.Where(m => !m.HasEffect(s.Effect) && StatusRules.AttrFor(s.Effect, m) != 0)), // buff or shield: itself or an ally
