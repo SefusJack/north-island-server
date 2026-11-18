@@ -140,8 +140,8 @@ public sealed partial class BattleHandlers
         var defeated = battle.Standalone ? []
             : battle.Monsters.Where(m => m.Npc is not null && !m.Captured).Select(m => m.Npc!).ToList();
         var o = options.Value;
-        int Share(Fighter? f, int level, int reborn) =>
-            f is null || battle.Standalone ? 0 : BattleFormulas.ExpShare(battle.Monsters, f, level, reborn, o, formulas.Table, winPlate);
+        int Share(Fighter? f, int level) =>
+            f is null || battle.Standalone ? 0 : BattleFormulas.ExpShare(battle.Monsters, f, level, o, formulas.Table, winPlate);
         var seasonalFactor = BattleFormulas.CappedExpMultipliers(calendar.ExpMultiplier(), 1, o.ExpMultiplierCap).Seasonal;
         int Seasonal(int rawExp) => (int)Math.Min(int.MaxValue, Math.Round(rawExp * seasonalFactor));
 
@@ -158,7 +158,7 @@ public sealed partial class BattleHandlers
         {
             var character = winner.ActiveCharacter!;
             var playerFighter = battle.Players.Find(p => ReferenceEquals(p.Session, winner) && !p.Left);
-            var rawExp = Share(playerFighter, character.Level, character.RebornCount);
+            var rawExp = Share(playerFighter, character.Level);
             var exp = Seasonal(rawExp);
             var own = character.ExpPausedSince is null
                 ? exp
@@ -180,7 +180,7 @@ public sealed partial class BattleHandlers
                     ? BattleFormulas.CappedExpMultipliers(calendar.ExpMultiplier(), TimedEffects.ExpMultiplier(character, TimedEffects.Now), o.ExpMultiplierCap)
                         .Potion
                     : 1;
-                var petShare = Seasonal(Share(petFighter, pet.Level, pet.Reborn));
+                var petShare = Seasonal(Share(petFighter, pet.Level));
                 var petBurst = DamageBurst(petFighter, pet.Level);
                 buffShareBase = petShare + petBurst;
                 // The pet gets the Training Island's flat amount on top as its owner does.

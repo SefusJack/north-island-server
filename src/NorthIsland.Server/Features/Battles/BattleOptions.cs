@@ -96,15 +96,15 @@ public sealed class BattleOptions
     /// <summary>The power the fighter's level is raised to in the kills per level of a reborn fighter.</summary>
     public double RebornKillsPerLevelPower { get; set; } = 2;
 
-    /// <summary>The percent more experience per level a monster is above the fighter, in level-share mode.</summary>
+    /// <summary>The percent more experience per level a monster is above the fighter, in level-share mode; 0 or more.</summary>
     public double FightUpBonusPerLevelPercent { get; set; } = 1.5;
 
-    /// <summary>The largest percent more experience a monster above the fighter pays, in level-share mode.</summary>
+    /// <summary>The largest percent more experience a monster above the fighter pays, in level-share mode; 0 or more.</summary>
     public double FightUpBonusMaxPercent { get; set; } = 50;
 
     /// <summary>
-    /// The highest fighter level used when the fighter's level is compared with a monster's for experience, in both modes; 0 or less
-    /// turns it off.
+    /// The highest fighter level used when a fighter above a monster is compared with it for experience, in both modes; a monster
+    /// above the fighter's real level is still measured from that level. 0 or less turns it off.
     /// </summary>
     public int LevelGapCeiling { get; set; } = 165;
 

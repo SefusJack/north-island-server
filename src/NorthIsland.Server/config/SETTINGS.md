@@ -110,9 +110,9 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `RebornKillsPerLevelBase` | The base term of the kills a reborn fighter needs per level (LevelShare mode) |
 | `RebornKillsPerLevelCoef` | The factor on the fighter's level raised to RebornKillsPerLevelPower in the kills per level of a reborn fighter (LevelShare mode) |
 | `RebornKillsPerLevelPower` | The power the fighter's level is raised to in the kills per level of a reborn fighter (LevelShare mode) |
-| `FightUpBonusPerLevelPercent` | The percent more experience per level a monster is above the fighter (LevelShare mode); a monster at or below the fighter uses LevelGapFullUpTo and LevelGapZeroFrom instead |
-| `FightUpBonusMaxPercent` | The largest percent more experience a monster above the fighter pays (LevelShare mode) |
-| `LevelGapCeiling` | The highest fighter level used when the fighter's level is compared with a monster's for experience, in both modes, so fighters above the top monsters still earn from them; 0 or less turns it off |
+| `FightUpBonusPerLevelPercent` | The percent more experience per level a monster is above the fighter (LevelShare mode), 0 or more; a monster at or below the fighter uses LevelGapFullUpTo and LevelGapZeroFrom instead |
+| `FightUpBonusMaxPercent` | The largest percent more experience a monster above the fighter pays (LevelShare mode), 0 or more |
+| `LevelGapCeiling` | The highest fighter level used when a fighter above a monster is compared with it for experience, in both modes, so fighters above the top monsters still earn from them; a monster above the fighter's real level is still measured from that level (no fight-up bonus or under term for a monster below it); 0 or less turns it off |
 | `MonsterExpBase` | The base term of the experience a monster pays (Classic mode) |
 | `MonsterExpPerLevel` | The experience term a monster pays per monster level (Classic mode) |
 | `ExpPerLevelUnderMonster` | The experience term added per level the monster is above the fighter (Classic mode) |
