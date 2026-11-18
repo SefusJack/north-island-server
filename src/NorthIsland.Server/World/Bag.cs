@@ -28,7 +28,15 @@ public static class Bag
     /// <returns>True when the item stacks; false for an unknown item.</returns>
     public static bool IsStackable(ItemRecord? r) =>
         r is not null && !r.IsEquipment && r.EquipSlot is not (9 or 10) && r.Type != VehicleType && r.CellWidth <= 1 && r.CellHeight <= 1
-            && r.UsePeriod == 0 && r.SubType != 130 && Bottles.KindOf(r) == 0 && !SingleItems.Contains(r.Id);
+            && !IsTimed(r) && r.SubType != 130 && Bottles.KindOf(r) == 0 && !SingleItems.Contains(r.Id);
+
+    /// <summary>
+    /// Whether an item wears out with time (the client's GetItemUsePeriod): a use period on an equip slot 1 to 7 or 10 item. The use period of
+    /// other items, such as the slot 8 exp potions, riceballs and space agreements, is the length of their effect, and they stack.
+    /// </summary>
+    /// <param name="r">The item's Item.dat record.</param>
+    /// <returns>True when the item has its own time limit.</returns>
+    private static bool IsTimed(ItemRecord r) => r.UsePeriod > 0 && r.EquipSlot is (>= 1 and <= 7) or 10;
 
     /// <summary>The item flag of items that cannot be transferred to another player.</summary>
     public const byte NoTradeFlag = 2;

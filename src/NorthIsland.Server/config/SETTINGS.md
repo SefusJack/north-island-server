@@ -160,6 +160,12 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `HotSpring.MinutesPerPoint` | Minutes in the water per bonus step |
 | `HotSpring.MaxPerVisit` | The most steps one visit gives |
 | `HotSpring.PointsPerStep` | The bonus points added to the character's maximum HP and SP per step |
+| `Sitting` | Settings of the HP and SP recovery while sitting on the ground (the Social window's sit-down action, Alt+1 by default); the rates are guesses from forum posts |
+| `Sitting.Enabled` | Switches the recovery on or off |
+| `Sitting.TickSeconds` | Seconds between two recovery steps |
+| `Sitting.HpPerTick` | The HP one step gives back; 0 for none |
+| `Sitting.SpPerTick` | The SP one step gives back; 0 for none |
+| `Sitting.ActivePet` | True to give the active pet the same step |
 
 ## mall.json
 

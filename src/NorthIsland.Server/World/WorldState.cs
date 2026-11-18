@@ -256,7 +256,25 @@ public sealed class WorldState(
         SendRideList(session);
         SendAutoCollectors(session);
         SendSceneTeams(session);
+        TellMapOfTeam(session);
         Arrived?.Invoke(session);
+    }
+
+    /// <summary>
+    /// Tells the players already on the map the team of a player who has just loaded it (13/6 with that one team), so they hide its
+    /// members' pets as they do for teams they saw form; a team that walks in (into a tent, say) would otherwise show its pets there.
+    /// </summary>
+    /// <param name="session">The player who has just loaded the map.</param>
+    private void TellMapOfTeam(GameSession session)
+    {
+        var id = PlayerId(session);
+        var leader = Teams.LeaderOf(id);
+        if (leader == 0)
+            return;
+        var map = session.ActiveCharacter!.MapId;
+        var packet = TeamMessages.SceneTeams([(leader, Teams.MembersOf(leader))]);
+        foreach (var other in Others(id).Where(o => o.ActiveCharacter?.MapId == map))
+            other.Send(packet);
     }
 
     /// <summary>Marks a player as auto collecting and tells the map.</summary>
