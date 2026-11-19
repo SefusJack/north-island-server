@@ -42,6 +42,15 @@ public sealed partial class BattleHandlers
                     what = gone.Count > 0 ? $"removes {string.Join(", ", gone.Select(s => s.Effect))}" : "removes nothing";
                     took |= gone.Count > 0;
                     break;
+                case ReviveType: // revive skills (type 8): bring a fallen fighter back with the heal amount of HP
+                    var back = f.IsAlive ? 0 : Math.Min(amount, f.MaxHp);
+                    f.Hp += back;
+                    if (back > 0)
+                        Revived(battle, f);
+                    values.Add(new FighterValue(BattleMessages.AttrHp, back, Negative: false));
+                    what = back > 0 ? $"revives with {back} HP" : "is not down";
+                    took |= back > 0;
+                    break;
                 case 6 or 7 or 14: // heal skills (types 6, 7, 14): restore SP, HP or both
                     (values, var hp, var sp, var healedTook) = Heal(battle, f, skill, amount);
                     what = $"restores {hp} HP, {sp} SP";
@@ -79,6 +88,11 @@ public sealed partial class BattleHandlers
             skill.Name, skill.SpCost, player.Sp, target.Name, string.Join("; ", whats));
         await ActionPause(skill.Id, player, area).ConfigureAwait(false);
     }
+
+    /// <summary>Takes a fighter who got back up off the queue of fighters to knock off the field.</summary>
+    /// <param name="battle">The battle.</param>
+    /// <param name="f">The revived fighter.</param>
+    private static void Revived(Battle battle, Fighter f) => battle.PendingKnockOffs.Remove(f);
 
     /// <summary>Restores a heal skill's SP, HP or both on one fighter, or puts its regeneration on.</summary>
     /// <param name="battle">The battle.</param>
