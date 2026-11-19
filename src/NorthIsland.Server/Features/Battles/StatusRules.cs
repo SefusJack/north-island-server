@@ -59,6 +59,9 @@ public static class StatusRules
     /// <summary>Effect byte of the remover that takes off every control, shield and debuff status.</summary>
     public const byte PurgeAll = 80;
 
+    /// <summary>Effect byte of Stone Wall (Skill.dat 11055, described as "A wall against physical atk"): it voids physical blows.</summary>
+    public const byte StoneWall = 101;
+
     /// <summary>Picks the status slot attribute a skill effect goes into on a target.</summary>
     /// <param name="effect">The Skill.dat effect byte.</param>
     /// <param name="target">The fighter receiving the status; its current statuses decide between the two attack buff slots.</param>
@@ -179,9 +182,16 @@ public static class StatusRules
     /// <returns>True when a status from that skill is present.</returns>
     public static bool IsHotFire(Fighter f) => f.Statuses.Exists(s => s.SkillId == SkillTable.HotFireAttack);
 
+    /// <summary>Whether Stone Wall voids a blow: a hand attack or a physical (type 1) skill on a fighter under effect 101.</summary>
+    /// <param name="target">The fighter hit.</param>
+    /// <param name="skill">The skill used, or null for a hand attack.</param>
+    /// <returns>True when the blow does nothing.</returns>
+    public static bool BlocksPhysical(Fighter target, SkillRecord? skill) =>
+        skill is null or { Type: 1 } && target.HasEffect(StoneWall);
+
     /// <summary>The factor a fighter's defence is multiplied by because of shield, defence up and defence down.</summary>
     /// <param name="f">The fighter.</param>
     /// <returns>The factor, 1 when none is on.</returns>
     public static double DefenceScale(Fighter f) =>
-        (f.Statuses.Exists(s => s.Attr == Shield) ? 0.5 : 1) * (f.HasEffect(DefenceUp) ? 0.75 : 1) * (f.HasEffect(DefenceDown) ? 1.25 : 1);
+        (f.Statuses.Exists(s => s.Attr == Shield && s.Effect != StoneWall) ? 0.5 : 1) * (f.HasEffect(DefenceUp) ? 0.75 : 1) * (f.HasEffect(DefenceDown) ? 1.25 : 1);
 }

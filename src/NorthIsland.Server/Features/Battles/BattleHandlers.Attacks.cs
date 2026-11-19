@@ -249,7 +249,7 @@ public sealed partial class BattleHandlers
     /// <returns>The damage, whether it was a critical hit, and whether it missed.</returns>
     private (int Damage, bool Critical, bool Missed) HitTarget(Fighter player, Fighter target, SkillRecord? skill, bool combo, int targets = 1)
     {
-        if (BattleFormulas.IsVoidAgainst(skill, target))
+        if (BattleFormulas.IsVoidAgainst(skill, target) || StatusRules.BlocksPhysical(target, skill))
         {
             NoteAction(player, target, 0);
             return (0, false, true);
@@ -425,7 +425,7 @@ public sealed partial class BattleHandlers
             {
                 if (skill is not null)
                     attacker.Sp -= skill.SpCost;
-                (damage, critical) = MonsterBlow(attacker, target, skill, combo: true);
+                (damage, critical, missed) = MonsterBlow(attacker, target, skill, combo: true);
             }
             var guard = !attacker.IsHuman && target.Defending ? (byte)1 : (byte)0;
             records.Add(new ActionRecord(attacker.Row, attacker.Col, member.SkillId,
@@ -539,12 +539,13 @@ public sealed partial class BattleHandlers
         List<ActionTarget> hits = [];
         foreach (var hit in area)
         {
-            var (damage, critical) = MonsterBlow(monster, hit, skill, combo: false, area.Count);
-            hits.Add(new ActionTarget(hit.Row, hit.Col, Hit: true, Guard: hit.Defending ? (byte)1 : (byte)0,
-                [new FighterValue(BattleMessages.AttrHp, damage, Negative: true, Critical: critical)]));
-            logger.LogInformation("[{Session}] {Monster} {How} {Player} for {Damage}{Critical}{Defended} ({Hp}/{Max} HP left)", session.Id, monster.Name,
+            var (damage, critical, missed) = MonsterBlow(monster, hit, skill, combo: false, area.Count);
+            // a blow Stone Wall voids is sent as a miss (no number) without the guard flag, so the client plays the wall's motion
+            hits.Add(new ActionTarget(hit.Row, hit.Col, Hit: !missed, Guard: !missed && hit.Defending ? (byte)1 : (byte)0,
+                BlowValues(damage, critical, missed, null)));
+            logger.LogInformation("[{Session}] {Monster} {How} {Player} for {Damage}{Critical}{Missed}{Defended} ({Hp}/{Max} HP left)", session.Id, monster.Name,
                 skill is null ? "hits" : $"uses {skill.Name} ({skill.SpCost} SP) on", hit.Name, damage, critical ? " (critical)" : "",
-                hit.Defending ? " (defending)" : "", hit.Hp, hit.MaxHp);
+                missed ? " (blocked by Stone Wall)" : "", hit.Defending ? " (defending)" : "", hit.Hp, hit.MaxHp);
         }
         battle.SendAttackArea(monster, areaCode);
         battle.Send(client => BattleMessages.Action(monster.Row, monster.Col, skillId, hits, client));
@@ -590,9 +591,11 @@ public sealed partial class BattleHandlers
     /// <param name="skill">The skill used, or null for a hand attack.</param>
     /// <param name="combo">True when the blow is part of a combination.</param>
     /// <param name="targets">The number of fighters the attack hits.</param>
-    /// <returns>The damage and whether it was a critical hit.</returns>
-    private (int Damage, bool Critical) MonsterBlow(Fighter monster, Fighter player, SkillRecord? skill, bool combo, int targets = 1)
+    /// <returns>The damage, whether it was a critical hit, and whether Stone Wall voided it.</returns>
+    private (int Damage, bool Critical, bool Missed) MonsterBlow(Fighter monster, Fighter player, SkillRecord? skill, bool combo, int targets = 1)
     {
+        if (StatusRules.BlocksPhysical(player, skill))
+            return (0, false, true);
         int raw;
         bool critical;
         if (options.Value.WindowDamage)
@@ -626,7 +629,7 @@ public sealed partial class BattleHandlers
         if (raw > 2L * player.MaxHp && player.Kind == 2) // player
             player.SentBack = true;
         player.Hp = Math.Max(0, player.Hp - raw);
-        return (raw, critical);
+        return (raw, critical, false);
     }
 
     /// <summary>Picks the skill a monster uses this turn, if any, and the monster it is used on.</summary>
