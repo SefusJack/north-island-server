@@ -85,7 +85,7 @@ public sealed partial class BattleHandlers
         monster.DropGiven = true;
         var share = new DropShare(npc, monster, felling.Count);
         var thrown = false;
-        foreach (var (itemId, regular) in new[] { (DropOf(share), true), (EventDropOf(share, calendar.Drops()), false) })
+        foreach (var (itemId, regular, table) in DropRolls(share, calendar.Drops()))
         {
             if (itemId is not { } id || items[id] is not { } item)
                 continue;
@@ -114,7 +114,7 @@ public sealed partial class BattleHandlers
                     item.Name,
                     added,
                     monster.Name,
-                    regular ? "" : " (event table)");
+                    table);
             }
             if (got.Count == 0)
                 continue;
@@ -259,6 +259,35 @@ public sealed partial class BattleHandlers
         return monster.EventDropItem;
     }
 
+    /// <summary>Rolls every drop table for a monster: its own list, the seasonal event table and the level drop table.</summary>
+    /// <param name="share">The drop.</param>
+    /// <param name="seasonal">The seasonal event's drop table.</param>
+    /// <returns>Per table the item rolled or null, whether it is the regular drop that a double drop doubles, and the table's log label.</returns>
+    private (ushort? Item, bool Regular, string Table)[] DropRolls(DropShare share, IReadOnlyList<CalendarDrop> seasonal) =>
+    [
+        (DropOf(share), true, ""),
+        (EventDropOf(share, seasonal), false, " (event table)"),
+        (LevelDropOf(share), false, " (level table)"),
+    ];
+
+    /// <summary>Rolls the item a monster drops from the level drop table, once per monster fighter.</summary>
+    /// <param name="share">The drop.</param>
+    /// <returns>The item id, or null.</returns>
+    private ushort? LevelDropOf(DropShare share)
+    {
+        var table = options.Value.LevelDrops;
+        if (table.Count == 0)
+            return null;
+        if (share.Monster is not { } monster)
+            return BattleFormulas.LevelDrop(table, share.Npc.Level, GameRandom.Shared);
+        if (!monster.LevelDropRolled)
+        {
+            monster.LevelDropItem = BattleFormulas.LevelDrop(table, share.Npc.Level, GameRandom.Shared);
+            monster.LevelDropRolled = true;
+        }
+        return monster.LevelDropItem;
+    }
+
     /// <summary>Rolls the item a monster drops from its own list, once per monster fighter.</summary>
     /// <param name="share">The drop.</param>
     /// <returns>The item id, or null.</returns>
@@ -311,7 +340,7 @@ public sealed partial class BattleHandlers
         {
             if (share.Monster is { DropGiven: true })
                 continue;
-            foreach (var (drop, regular) in new[] { (DropOf(share), true), (EventDropOf(share, seasonal), false) })
+            foreach (var (drop, regular, table) in DropRolls(share, seasonal))
             {
                 if (drop is not { } itemId || items[itemId] is null)
                     continue;
@@ -320,7 +349,7 @@ public sealed partial class BattleHandlers
                 if (added == 0)
                     continue;
                 session.Send(Protocol.Messages.Items.GroundMessages.ItemObtained(itemId, (ushort)added));
-                dropped.Add(items[itemId]!.Name + (regular ? "" : " (event)"));
+                dropped.Add(items[itemId]!.Name + table);
             }
         }
         logger.LogInformation("[{Session}] {Name} gains {Exp} exp ({Total} total), {Gold} gold{Drops}", session.Id, character.Name,

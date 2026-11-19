@@ -99,6 +99,18 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `CaptureLevelsAbove` | How many levels above the catcher a monster may be and still be captured |
 | `MonsterNetLevels` | The levels added to CaptureLevelsAbove while the catcher wears a Monster Net that is not used up |
 | `CaptureHpBelowPercent` | A monster whose HP is this percent of its maximum or more cannot be captured; 0 turns the rule off |
+| `LevelDrops` | Items any monster in a level range may drop on top of its own item list (by default the Alchemy Books); an empty list turns them off |
+
+### Rows of `LevelDrops`
+
+Each row: Item = the item id that drops; MinLevel = the lowest monster level the row applies to; MaxLevel = the highest (0 means no upper bound); Percent = the chance in percent that a monster in the range drops the item. A monster rolls this table once, separately from its own list and the seasonal event table, and a Double Drop does not double it. The default bands follow the WLO Mobile guide; its drop rate is not known, so 0.5 is a guess.
+
+| Item | Name |
+|---|---|
+| 34009 | Alchemy Book 1 |
+| 34010 | Alchemy Book 2 |
+| 34011 | Alchemy Book 3 |
+| 34012 | Alchemy Book 4 |
 
 ## progression.json
 
