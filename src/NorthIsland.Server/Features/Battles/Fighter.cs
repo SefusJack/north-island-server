@@ -175,6 +175,12 @@ public sealed class Fighter
     /// <summary>True once the event drop has been rolled.</summary>
     public bool EventDropRolled { get; set; }
 
+    /// <summary>The level drop table item this monster drops, rolled once; null when none.</summary>
+    public ushort? LevelDropItem { get; set; }
+
+    /// <summary>True once the level drop has been rolled.</summary>
+    public bool LevelDropRolled { get; set; }
+
     /// <summary>True once the drop was handed to a player.</summary>
     public bool DropGiven { get; set; }
 

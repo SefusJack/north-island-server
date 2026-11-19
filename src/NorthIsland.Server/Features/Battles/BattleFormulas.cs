@@ -558,6 +558,14 @@ public static class BattleFormulas
         return null;
     }
 
+    /// <summary>Rolls a drop from the level drop table for a monster of a level.</summary>
+    /// <param name="table">The level drop rows.</param>
+    /// <param name="level">The monster's level.</param>
+    /// <param name="rng">The random source.</param>
+    /// <returns>The item id of the row hit, or null when none is.</returns>
+    public static ushort? LevelDrop(IReadOnlyList<LevelDrop> table, int level, Random rng) =>
+        EventDrop([.. table.Where(d => d.Covers(level)).Select(d => new CalendarDrop { Item = d.Item, Percent = d.Percent })], rng);
+
     /// <summary>The weight of a drop slot in the drop roll.</summary>
     /// <param name="rank">The item's rank.</param>
     /// <param name="top">The highest rank on the monster's list.</param>

@@ -237,6 +237,9 @@ public sealed class BattleOptions
     /// <summary>The chance in percent that a defeated monster drops one item of its item list.</summary>
     public int MonsterDropChancePercent { get; set; } = 30;
 
+    /// <summary>Items any monster within a level range may drop on top of its own list, such as the Alchemy Books; empty turns them off.</summary>
+    public List<LevelDrop> LevelDrops { get; set; } = [];
+
     /// <summary>True when winning a battle also pays gold.</summary>
     public bool MonsterGoldRewards { get; set; }
 }
