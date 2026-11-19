@@ -6,8 +6,11 @@ namespace NorthIsland.Server.Features.Items;
 /// <summary>The gift card lists, read from an embedded table.</summary>
 public static class GiftCards
 {
-    /// <summary>The version number sent with every card list.</summary>
-    public const byte Flag = 1;
+    /// <summary>
+    /// The version number sent with every card list. The client keeps the lists it was sent and asks again only when this differs, so raise it
+    /// whenever a card's choices change (2: the Bronze, Silver, Golden and Free Cards became the event tier choice cards).
+    /// </summary>
+    public const byte Flag = 2;
 
     /// <summary>Reads the embedded gift card table.</summary>
     /// <returns>The cards by card item id; empty when the table is missing.</returns>
