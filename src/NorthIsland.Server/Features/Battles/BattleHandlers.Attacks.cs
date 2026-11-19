@@ -53,7 +53,8 @@ public sealed partial class BattleHandlers
                     if (player.IsHuman && attr != 0)
                         NoteBurstEffect(player, f, skill.Effect);
                     hit = attr != 0 && !StatusRules.BlockedByDebuff(skill.Effect, attr, player, f, options.Value.DebuffStacking)
-                        && (f.Side == player.Side || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
+                        && (f.Side == player.Side || skill.Effect == StatusRules.Shrink // Shrink skips the hit roll
+                            || GameRandom.Shared.Next(100) < BattleFormulas.StatusHitChancePercent);
                     if (hit)
                     {
                         if (skill.Type is 4 or 19 && player.Kind == 2 && f.Kind == 4 && ReferenceEquals(f.Session, player.Session)) // 2 player, 4 pet
