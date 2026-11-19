@@ -399,7 +399,7 @@ Copy this file to the data folder (data/events.json) to change it; that copy win
 events[]:
   name           for the log
   mode           "Auto" (on inside its window), "On" (always, for testing), "Off"
-  start, end     yearly window "MM-dd", both days included; the end may be in the next year (12-31 .. 01-01)
+  start, end     yearly window "MM-dd", both days included; the end may be in the next year (12-25 .. 01-01)
   years          per-year windows for the lunar festivals, e.g. "2027": ["06-07", "06-16"]; they replace start / end
                  that year (a lunar festival with no row for this year is off)
   days           the days of the week the event is on, e.g. ["Saturday", "Sunday"]; used instead of the dates above
@@ -420,22 +420,77 @@ option ActivitiesAlwaysOpen is false. Server local time.
 
 Both end dates are included. The lunar festivals move every year, so their dates are listed under `years` in `events.json`.
 
-| Event | When | In the game |
-|---|---|---|
-| New Year | Dec 31 to Jan 1 | Monsters can drop the New Year gift box. |
-| Chinese New Year | 2 days before to 4 days after the lunar New Year | The Year Beast quest, Aunt Zhuang's fairy and the Red Pack wishes in Fishing Village, plus event drops. |
-| Valentine's Day | Feb 13 to Feb 15 | The Western Valentine's quest in Holy Village, plus event drops. |
-| Dragon Boat Festival | 2 days before to 7 days after the 5th of the 5th lunar month | The Dragon Boat quest and Qu Yuan's story in China, Xu Xian's trouble in Chang'an, and Dumpling drops. |
-| Qixi | 2 days before to 8 days after the 7th of the 7th lunar month | Ming and Ling's wedding invitations in Chang'an and the wishes on the bamboo in Kyoto, plus Qixi stories in Chang'an and Fishing Village. |
-| Mid-Autumn Festival | 2 days before to 7 days after the 15th of the 8th lunar month | The Mid-Autumn story in Chang'an, the Jade Rabbit in China, and Reunion Pack drops. |
-| Halloween | Oct 30 to Nov 1 | Double experience and pumpkin drops. |
-| Christmas | Dec 24 to Dec 30 | Santa Claus appears in Holy Village, plus event drops. |
-| White Day | Mar 12 to Mar 24 | The White Day event in Holy Village. |
-| Lantern Festival | 2 days before to 3 days after the 15th of the 1st lunar month | The Lantern Festival stories in Chang'an. |
-| Ghost Month | 6 days before to 8 days after Qixi | The Night Parade of a Hundred Demons in Fishing Village. |
-| Summer | Aug 10 to Aug 29 | The Summer Event in Holy Village. |
-| Thanksgiving | Nov 26 to Dec 10 | The Thanksgiving event. |
-| Double XP Weekend | Every Saturday and Sunday | Double experience. |
+| Event | When | In the game | Bags (common / big) |
+|---|---|---|---|
+| Winter Festival | Jan 2 to Jan 21 | Event drops only. | 2012 Sock / 2012 X'Mas Giftbox |
+| Chinese New Year | 2 days before to 4 days after the lunar New Year | The Year Beast quest, Aunt Zhuang's fairy and the Red Pack wishes in Fishing Village, plus event drops. | Golden Snake Pack / Deity Dragon Pack |
+| Valentine's Day | Feb 7 to Feb 15 | The Western Valentine's quest in Holy Village, plus event drops. | 2013 Valentine Box / 2013 Valentino Pack |
+| Lantern Festival | 2 days before to 3 days after the 15th of the 1st lunar month | The Lantern Festival stories in Chang'an, plus event drops. | 2013 Lantern Box / Lantern Blessings Box |
+| White Day | Mar 12 to Mar 24 | The White Day event in Holy Village, plus event drops. | White Day Box / 2013 White Day Gift |
+| Spring Festival | Mar 28 to Apr 18 | An egg hunt: event drops only. | 2012 Easter Pack / 2012 Super Easter Pack |
+| Anniversary | May 1 to May 21 | Event drops only; move it to the server's own anniversary. | 2011 Anniversary bag / Anniversary Big Bag |
+| Dragon Boat Festival | 2 days before to 7 days after the 5th of the 5th lunar month | The Dragon Boat quest and Qu Yuan's story in China, Xu Xian's trouble in Chang'an, plus event drops. | Dumpling Box / Golden Dumpling |
+| Summer | Jul 1 to Aug 29 | The Summer Event in Holy Village, plus event drops. | Cooling Box / 2011 Summer Gift Pack |
+| Artisan Festival | Sep 1 to Sep 14 | Event drops of forging and Lethe scrolls. | Pink Scrollwork Egg / Blue Scrollwork Egg |
+| Mid-Autumn Festival | 2 days before to 7 days after the 15th of the 8th lunar month | The Mid-Autumn story in Chang'an, the Jade Rabbit in China, plus event drops. | Reunion Pack / Super Reunion Pack |
+| Halloween | Oct 14 to Oct 31 | Double experience and event drops. | 2013 Spooky Pumpkin / 2013 Spooky Pack |
+| Thanksgiving | Nov 14 to Nov 30 | The Astrologian in the Civilian's House (map 12003) trades a 2013 Big Turkey and a 2013 Pumpkin Pie, both dropped by monsters, for a 2013 Big Box; repeatable. | 2013 Big Turkey + 2013 Pumpkin Pie / 2013 Big Egg |
+| Christmas | Dec 1 to Dec 25 | Santa Claus in Holy Village (4 Happy Xmas Snowballs for a Christmas Gift Pack), Christmas music, plus event drops. | 2013 Sock / 2013 X'Mas Pack |
+| New Year | Dec 25 to Jan 1 | Event drops. | 2013 New Year Pack / 2013 Happiness Pack |
+| Double XP Weekend | Every Saturday and Sunday | Double experience. | – |
+
+Some event is on about 70% of the days of a year (Double XP Weekend not counted). Ghost Month and Qixi are left out:
+they always fall inside Summer, and one inside the other, so their drops would stack. Their quests (the Night Parade in
+Fishing Village, Ming and Ling's wedding, the bamboo wishes) only run while a calendar event lists their scripts; to bring
+one back, add an event with its `scripts` from the git history of this file.
+
+### Event prizes
+
+The event bags are meant to be the only way to get the Item Mall's items (as if the mall were closed); no bag gives a
+pet voucher or the 7 Colors Egg; the one random-pet prize is the Pet Egg (Spring Festival, Anniversary, Thanksgiving),
+whose pet starts at level 1 like every new pet. Each event's monsters drop its common bag (2% per monster) and, rarely,
+its big bag (0.15%). The bags are the client's own lucky bags (item type 41,
+which show their contents when previewed), except the Anniversary boxes, and their rows are in `Data/LuckyBags.tsv` and
+`Data/BoxGuesses.tsv` (or override them with `MallBoxes:LuckyBagsFile`). All bags follow one pattern (weights out of 1000):
+
+| Bag | Rows |
+|---|---|
+| Common | 4 potions, bottles or good foods (113 each, 45%); 6 themed uncommons such as riceballs, fireworks, festive hats, 2X EXP Copper/Silver Cards, grass, amity jellies (55 each, 33%); 5 themed rares such as costumes, maid suits, furniture, Gold EXP Cards, Space Contract, GPS, forging tools, the mall's own boxes (30 each, 15%); the event's big bag (30, 3%); one jackpot (8, 0.8%); a Bronze Card (18, 1.8%), a Silver Card (10, 1%) and a Golden Card (2, 0.2%) |
+| Big | 7 themed rares (95 each, 66.5%) and a Silver Card (35, 3.5%); 4 themed jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Yacht, Bomb Diamonds, Potential Pill (60 each, 24%) and a Golden Card (20, 2%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar (17 each, 3.4%) and a Free Card (6, 0.6%) |
+
+The four choice cards (gift cards, `Data/GiftCards.tsv`) are exchanged for any one prize of their tier from every event,
+chosen by the player, so a prize whose event is months away is still within reach:
+
+| Card | Choose one of |
+|---|---|
+| Bronze Card (50017) | the 57 uncommons |
+| Silver Card (50018) | the 81 rares |
+| Golden Card (50019) | the 22 jackpots |
+| Free Card (50000) | the 12 top prizes |
+
+Outside its own event, getting a chosen prize takes about 3 to 4.5 times as many monsters as during it (about 1 in
+2,900 kills for an uncommon, 3,900 for a rare, 13,500 for a jackpot and 93,000 for a top prize, against 700, 1,150,
+4,100 and 21,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
+
+The mall's real boxes are prizes too (Gift Pack, War Pack, Scroll Pack, Gear Pack with the pet gear, Transferred Pack,
+Water Pack, Maid Box, Crystal Ice Cube, Super Gift Box, Friendship Pumpkin, Thanksgiving Egg, 2010 Jolly Pack, Anniversary
+Big Bag 34302), with their pet voucher rows taken out of `Data/MallBoxes.tsv`.
+
+Mall items no event gives, on purpose:
+
+| Why | Items |
+|---|---|
+| Can be had another way (NPC shop, crafting, monster drops) | Registration Voucher, Boarded Voucher, Sky Banger, Dragon Banger, Pork Bone Noodle, Pork Miso Noodle, Mixed Noodles, Shape Clay, the vehicle fuels |
+| Pet food (permanent pet ability points) | the 12 "Adds 1 to ...'s ability" foods, Strengthen Pack |
+| Leveled pets | Holy Spirit, Jade Rabbit, Snow Monster, Mammoth and Gold Griffin Vouchers, Cerberus Ticket, 7 Colors Egg (the Pet Egg is the one random-pet prize) |
+| No use on this server (yet) | Loudspeaker (no world radio), VIP Card (shops don't discount), Wisdom Crystal, Fast Jet, Christmas Bell, Cocoa Nib, Soft Sweet, Spring Riddlepaper, Fixed Stick, and the battle throwables Grenade, Korean Cake, Big Bowling and Lollipop (using items in battle only heals) |
+| Weak food | Fruit Cake, Neapolitan Sundaes |
+| Boxes whose contents are given directly | Training Box, New Year Box, New Year Pack, 2011 Ghost Pack, 2011 Big Egg, Glazed Stone Bag, Magic Set Box, Glaze Bag |
+| Pet gear, in the Gear Pack | the 13 "Special for ..." pet gear pieces |
+
+The common bags can't be traded and the big bags (the year "Pack"s) can, as in the original game. The 2013 Big Turkey only
+opens into food and potions, so trading it in is worth more; the 2013 Big Box it is traded for uses the big bag pattern.
+The Christmas Gift Pack and the Spring Red Pack (from the Chinese New Year script) use their event's common bag rows.
 
 National Treasure runs on Mondays and the 15-round challenge on Fridays, both from 7 to 9 pm server time.
 
