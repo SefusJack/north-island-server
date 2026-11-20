@@ -19,6 +19,19 @@ public static class Pets
                 : c.Pets.Exists(p => p.NpcId == npc.Id) || pending.Contains(npc.Id) ? "already has one"
                     : null;
 
+    /// <summary>Tells whether a character already has a pet of a kind: on the team, in the pet storage or asleep in a bed of the house.</summary>
+    /// <param name="c">The character.</param>
+    /// <param name="npcId">The NPC id of the kind.</param>
+    /// <returns>True when a pet of that kind is on the team, stored or asleep.</returns>
+    public static bool OwnsKind(Character c, ushort npcId) =>
+        c.Pets.Exists(p => p.NpcId == npcId) || c.StoredPets.Exists(p => p.NpcId == npcId) || SleepsInBed(c, npcId);
+
+    /// <summary>Tells whether a pet of a kind sleeps in one of the character's beds.</summary>
+    /// <param name="c">The character.</param>
+    /// <param name="npcId">The NPC id of the kind.</param>
+    /// <returns>True when a sleeping pet has that NPC id.</returns>
+    public static bool SleepsInBed(Character c, ushort npcId) => c.Furniture.Exists(f => f.Sleepers.Exists(s => s.Pet.NpcId == npcId));
+
     /// <summary>The item sub type of the Monster Net.</summary>
     public const byte MonsterNetSubType = 140;
 
