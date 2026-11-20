@@ -12,6 +12,7 @@ namespace NorthIsland.Server.Features.Minigames;
 /// <param name="items">The item data, for names and bag stacking.</param>
 /// <param name="events">The event engine, whose finished events join players.</param>
 /// <param name="rankings">The rankings, which get the final order.</param>
+/// <param name="calendar">The event calendar, which tells whether the quiz is open and in which opening window.</param>
 /// <param name="options">The minigame options.</param>
 /// <param name="logger">The logger.</param>
 public sealed class QuizHandlers(
@@ -20,6 +21,7 @@ public sealed class QuizHandlers(
     ItemData items,
     EventEngine events,
     RankingRegistry rankings,
+    EventCalendar calendar,
     IOptions<MinigameOptions> options,
     ILogger<QuizHandlers> logger)
 {
@@ -59,7 +61,16 @@ public sealed class QuizHandlers(
         public byte Answer { get; set; }
     }
 
-    /// <summary>Guards the player list, the washed-out list, the running flag and the current question.</summary>
+    /// <summary>Guards the prize windows.</summary>
+    private readonly Lock _prizeLock = new();
+
+    /// <summary>
+    /// The opening window in which each character last won a place prize, by activity, login id and character slot; a character wins at most
+    /// one prize of each activity per opening window, however many games run in it.
+    /// </summary>
+    private readonly Dictionary<(string Activity, int LoginId, byte Slot), string> _prizeWindows = [];
+
+    /// <summary>Guards the player list, the washed-out list, the running and started flags and the current question.</summary>
     private readonly Lock _lock = new();
 
     /// <summary>The players in the game, by login id.</summary>
@@ -71,8 +82,11 @@ public sealed class QuizHandlers(
     /// <summary>The questions loaded from the quiz file.</summary>
     private readonly List<QuizQuestion> _bank = [];
 
-    /// <summary>Whether a game is running.</summary>
+    /// <summary>Whether a game is running, from its first player joining to its end.</summary>
     private bool _running;
+
+    /// <summary>Whether the running game has asked its first question; from then on no one can join.</summary>
+    private bool _started;
 
     /// <summary>The id of the current question, which answers have to quote.</summary>
     private ushort _questionId;
@@ -128,22 +142,38 @@ public sealed class QuizHandlers(
         Join(session);
     }
 
-    /// <summary>Adds the player to the game, opens their screen and starts the game when none is running.</summary>
+    /// <summary>
+    /// Adds the player to the game, opens their screen and starts the game when none is running. It is refused while the quiz is closed by
+    /// the weekly hours and once the running game has asked its first question; a player already in the game gets the screen again.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     public void Join(GameSession session)
     {
-        var id = session.Account!.LoginId;
+        if (session.Account is not { } account || session.ActiveCharacter is not { } character)
+            return;
+        if (!calendar.ActivityOpen(EventCalendar.ActivityQuiz))
+        {
+            logger.LogWarning("[{Session}] {Name}: Q&A join while the quiz is closed", session.Id, character.Name);
+            return;
+        }
         bool start;
         lock (_lock)
         {
-            if (!_players.ContainsKey(id))
-                _players[id] = new Player(session) { Lives = options.Value.QuizLives };
+            if (!_players.ContainsKey(account.LoginId))
+            {
+                if (_started)
+                {
+                    logger.LogWarning("[{Session}] {Name}: Q&A join after the first question", session.Id, character.Name);
+                    return;
+                }
+                _players[account.LoginId] = new Player(session) { Lives = options.Value.QuizLives };
+            }
             start = !_running;
             _running = true;
         }
         session.Send(QuizMessages.Open());
         SendTop();
-        logger.LogInformation("[{Session}] {Name} joins the Q&A", session.Id, session.ActiveCharacter?.Name);
+        logger.LogInformation("[{Session}] {Name} joins the Q&A", session.Id, character.Name);
         if (start)
             _ = Task.Run(RunGame);
     }
@@ -196,13 +226,29 @@ public sealed class QuizHandlers(
     }
 
     /// <summary>
-    /// Runs one game: asks the questions, scores the answers, washes out players without lives, then publishes the ranking and
-    /// gives the prizes.
+    /// Runs one game: waits for the start delay, then, when the quiz is still open, asks the questions, scores the answers, washes out players
+    /// without lives, publishes the ranking, gives the prizes and sends the finalists back to the lobby. When the quiz closed during the
+    /// delay, the players are sent back without a game.
     /// </summary>
     private async Task RunGame()
     {
         try
         {
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(0, options.Value.QuizStartSeconds))).ConfigureAwait(false);
+            var window = OpeningWindow(EventCalendar.ActivityQuiz);
+            List<Player> joined;
+            lock (_lock)
+            {
+                _started = true;
+                joined = [.. _players.Values];
+            }
+            if (window is null)
+            {
+                logger.LogWarning("Q&A closed before its first question; {Count} player(s) sent back", joined.Count);
+                foreach (var p in joined)
+                    await SendOut(p.Session).ConfigureAwait(false);
+                return;
+            }
             var asked = new HashSet<int>();
             for (var round = 1; round <= options.Value.QuizQuestions; round++)
             {
@@ -250,8 +296,7 @@ public sealed class QuizHandlers(
                 foreach (var p in washedOut)
                 {
                     p.Session.Send(QuizMessages.WashedOut());
-                    p.Session.Send(QuizMessages.Close());
-                    world.ChangeMap(p.Session, EventArenas.Lobby);
+                    await SendOut(p.Session).ConfigureAwait(false);
                     logger.LogInformation("[{Session}] {Name} is washed out of the Q&A", p.Session.Id, p.Session.ActiveCharacter?.Name);
                 }
                 SendTop();
@@ -267,13 +312,17 @@ public sealed class QuizHandlers(
                 ranked = [.. names, .. Enumerable.Reverse(_washedOut)];
             if (ranked.Count > 0)
                 rankings.SetQuiz(ranked);
-            for (var place = 1; place <= finalists.Count; place++)
+            foreach (var p in finalists)
             {
-                var p = finalists[place - 1];
                 p.Session.Send(QuizMessages.Over());
                 p.Session.Send(QuizMessages.Results(names));
-                using (await p.Session.ExclusiveAsync().ConfigureAwait(false)) // the prize goes in the bag between packets
-                    GivePrize(p.Session, place);
+            }
+            if (finalists.Count > 0)
+                await Task.Delay(TimeSpan.FromSeconds(options.Value.QuizGapSeconds)).ConfigureAwait(false); // the places stay on screen a moment
+            for (var place = 1; place <= finalists.Count; place++)
+            {
+                var (p, at) = (finalists[place - 1], place);
+                await SendOut(p.Session, () => GivePrize(p.Session, at, EventCalendar.ActivityQuiz, window)).ConfigureAwait(false);
             }
             logger.LogInformation("Q&A over: {Places}", string.Join(", ", finalists.Select(p => $"{p.Session.ActiveCharacter?.Name} {p.Score}")));
         }
@@ -288,29 +337,96 @@ public sealed class QuizHandlers(
                 _players.Clear();
                 _washedOut.Clear();
                 _running = false;
+                _started = false;
             }
         }
     }
 
-    /// <summary>Gives the prize configured for a place, if the whole prize fits in the player's bag.</summary>
+    /// <summary>
+    /// Holding the player's session gate, does the work given (a prize goes in the bag between packets), then closes their quiz screen and
+    /// sends them back to the lobby when they are still in the Q&amp;A hall.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="before">Work done first under the gate, such as giving the prize; null for none.</param>
+    private async Task SendOut(GameSession session, Action? before = null)
+    {
+        using (await session.ExclusiveAsync().ConfigureAwait(false))
+        {
+            if (session.State != SessionState.InWorld || session.ActiveCharacter?.MapId != QuizMapId)
+                return;
+            before?.Invoke();
+            session.Send(QuizMessages.Close());
+            world.ChangeMap(session, EventArenas.Lobby);
+        }
+    }
+
+    /// <summary>
+    /// Names the opening window of an activity that is open now. A window of the weekly hours is named by its date and start time; when
+    /// activities are always open, or the activity has no hours, the whole local day counts as one window.
+    /// </summary>
+    /// <param name="activity">The calendar activity name, such as <see cref="EventCalendar.ActivityQuiz"/>.</param>
+    /// <returns>The window's name; null when the activity is closed now.</returns>
+    public string? OpeningWindow(string activity)
+    {
+        if (!calendar.ActivityOpen(activity))
+            return null;
+        var now = calendar.Clock();
+        var day = now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        if (calendar.ActivitiesAlwaysOpen)
+            return day;
+        foreach (var h in calendar.File.Activities)
+        {
+            if (string.Equals(h.Name, activity, StringComparison.OrdinalIgnoreCase) && h.Day == now.DayOfWeek
+                && TimeOfDay(h.Start) is { } from && TimeOfDay(h.End) is { } to && now.TimeOfDay >= from && now.TimeOfDay < to)
+                return $"{day} {h.Start}";
+        }
+        return day;
+    }
+
+    /// <summary>Reads a time of day of the weekly hours, written as <c>h:mm</c>.</summary>
+    /// <param name="text">The text to read.</param>
+    /// <returns>The time of day; null when the text is unreadable.</returns>
+    private static TimeSpan? TimeOfDay(string text) =>
+        TimeSpan.TryParseExact(text, @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+
+    /// <summary>
+    /// Gives the prize configured for a place, if the whole prize fits in the player's bag and the character has not won a prize of the
+    /// activity in the same opening window. The caller holds the player's session gate.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="place">The final place, 1-based.</param>
-    public void GivePrize(GameSession session, int place)
+    /// <param name="activity">The calendar activity the game belongs to, such as <see cref="EventCalendar.ActivityQuiz"/>.</param>
+    /// <param name="window">The opening window the game started in, from <see cref="OpeningWindow"/>.</param>
+    public void GivePrize(GameSession session, int place, string activity, string window)
     {
-        if (_prizes.Find(p => place >= p.From && place <= p.To) is not { } prize || session.ActiveCharacter is not { } character)
+        if (_prizes.Find(p => place >= p.From && place <= p.To) is not { } prize || session.ActiveCharacter is not { } character
+            || session.Account is not { } account)
             return;
+        var key = (activity, account.LoginId, character.Slot);
+        lock (_prizeLock)
+        {
+            if (_prizeWindows.TryGetValue(key, out var won) && won == window)
+            {
+                logger.LogWarning("[{Session}] {Name}: {Activity} place {Place}, but a prize was already won in window {Window}", session.Id,
+                    character.Name, activity, place, window);
+                return;
+            }
+        }
         var trial = character.Bag.Select(b => new Data.BagItem { Slot = b.Slot, ItemId = b.ItemId, Count = b.Count, Wear = b.Wear }).ToList();
         if (!prize.Items.All(i => Bag.Add(trial, items, i.Id, i.Count).Sum(a => a.Added) == i.Count))
         {
-            logger.LogInformation("[{Session}] {Name}: Q&A place {Place}, but no room for the prize", session.Id, character.Name, place);
+            logger.LogInformation("[{Session}] {Name}: {Activity} place {Place}, but no room for the prize", session.Id, character.Name, activity,
+                place);
             return;
         }
+        lock (_prizeLock)
+            _prizeWindows[key] = window;
         foreach (var (id, count) in prize.Items)
             foreach (var (stack, added) in Bag.Add(character, items, id, count))
                 session.Send(
                     Protocol.Messages.Items.ItemMessages.BagAdd(
                         new Protocol.Messages.Items.BagEntry { Slot = stack.Slot, ItemId = stack.ItemId, Count = added, Wear = stack.Wear }));
-        logger.LogInformation("[{Session}] {Name}: Q&A place {Place}, prize {Items}", session.Id, character.Name, place,
+        logger.LogInformation("[{Session}] {Name}: {Activity} place {Place}, prize {Items}", session.Id, character.Name, activity, place,
             string.Join(", ", prize.Items.Select(i => $"{items[i.Id]?.Name ?? i.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)} x{i.Count}")));
     }
 
