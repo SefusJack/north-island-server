@@ -7,9 +7,11 @@ namespace NorthIsland.Server.Features.Trading;
 
 /// <summary>Serves the pet trade: two players on the same map each offer gold and at most one pet, and both must confirm.</summary>
 /// <param name="world">The online sessions.</param>
+/// <param name="combat">The combat stats, resent when a player gets off a pet they give away.</param>
 /// <param name="logger">The logger.</param>
 public sealed class PetTradeHandlers(
     WorldState world,
+    CombatStats combat,
     ILogger<PetTradeHandlers> logger)
 {
     /// <summary>Cancels the pet trade the session is in, if any, and tells the partner it was cancelled.</summary>
@@ -28,7 +30,8 @@ public sealed class PetTradeHandlers(
     }
 
     /// <summary>
-    /// Opens a pet trade with another player (<c>25/10</c>), or answers with the reason it is refused: busy, offline, other map, in a battle.
+    /// Opens a pet trade with another player (<c>25/10</c>), or answers with the reason it is refused: busy with a trade or an event, offline,
+    /// other map, in a battle.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: i32 login id of the other player.</param>
@@ -38,7 +41,7 @@ public sealed class PetTradeHandlers(
             return ValueTask.CompletedTask;
         var targetId = BinaryPrimitives.ReadInt32LittleEndian(body.Span);
         PetTradeResult? refusal;
-        if (session.Trades.Pets is not null || session.Trades.Items is not null)
+        if (session.Trades.Pets is not null || session.Trades.Items is not null || session.Event is not null)
             refusal = PetTradeResult.Busy;
         else if (world.SessionOf(targetId) is not { } target || target.ActiveCharacter is null || ReferenceEquals(target, session))
             refusal = PetTradeResult.TargetOffline;
@@ -59,11 +62,13 @@ public sealed class PetTradeHandlers(
             return ValueTask.CompletedTask;
         }
         session.Send(PetTradeMessages.Result(refusal.Value));
+        logger.LogInformation("[{Session}] pet trade request to {Target} refused: {Reason}", session.Id, targetId, refusal);
         return ValueTask.CompletedTask;
     }
 
     /// <summary>
-    /// Records the player's offer (<c>25/11</c>) and shows it to the partner. An offer of too much gold or an unusable pet cancels the trade.
+    /// Records the player's offer (<c>25/11</c>) and shows it to the partner. The offer keeps the pet itself, and any offer clears the
+    /// confirmation of both sides, so each confirms what the other offers now. An offer of too much gold or an unusable pet cancels the trade.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: i32 gold, optionally u8 pet slot (0 for no pet).</param>
@@ -74,13 +79,14 @@ public sealed class PetTradeHandlers(
         var gold = BinaryPrimitives.ReadInt32LittleEndian(body.Span);
         var petSlot = body.Length > 4 ? body.Span[4] : (byte)0;
         var pet = petSlot == 0 ? null : character.Pets.Find(p => p.Slot == petSlot);
-        PetTradeResult? refusal = gold < 0 || gold > character.Gold ? PetTradeResult.NoFunds
-            : petSlot != 0 && pet is null ? PetTradeResult.Cancelled
-                : pet is { Tradable: 0 } ? PetTradeResult.Cancelled
-                    : pet is { Amity: 0 } ? PetTradeResult.NoAmity
-                        : null;
-        if (refusal is { } r)
+        var refusal = gold < 0 || gold > character.Gold ? (PetTradeResult.NoFunds, "not that much gold")
+            : petSlot != 0 && pet is null ? (PetTradeResult.Cancelled, "no pet in that slot")
+                : pet is null ? null
+                    : Untradable(session, character, pet);
+        if (refusal is var (r, why))
         {
+            logger.LogWarning("[{Session}] pet trade offer refused, {Why}: gold {Gold} (has {Has}), pet slot {Slot}", session.Id, why, gold,
+                character.Gold, petSlot);
             Abort(session);
             session.Send(PetTradeMessages.Result(r));
             return ValueTask.CompletedTask;
@@ -93,9 +99,10 @@ public sealed class PetTradeHandlers(
                 return ValueTask.CompletedTask;
             var side = trade.Of(session);
             side.Gold = gold;
-            side.PetSlot = petSlot;
+            side.Pet = pet;
             side.Offered = true;
-            side.Confirmed = false;
+            trade.First.Confirmed = false;
+            trade.Second.Confirmed = false;
             partner = trade.PartnerOf(session).Session;
         }
         partner.Send(PetTradeMessages.PartnerOffer(gold, pet is null ? null : Pets.Info(pet), pet?.MaxHp ?? 0, pet?.MaxSp ?? 0, partner.Client));
@@ -142,7 +149,8 @@ public sealed class PetTradeHandlers(
     }
 
     /// <summary>
-    /// Carries out a confirmed trade: checks the gold and pets are still there and fit, swaps the pets and moves the gold difference.
+    /// Carries out a confirmed trade: checks the gold is still there and fits under the purse limit, that each offered pet is the same pet, still
+    /// in the team and still tradable, and that the pets fit, then swaps the pets and moves the gold difference.
     /// </summary>
     /// <param name="trade">The trade, locked by the caller.</param>
     /// <returns>The result sent to both players.</returns>
@@ -150,12 +158,18 @@ public sealed class PetTradeHandlers(
     {
         var (a, b) = (trade.First, trade.Second);
         var (ca, cb) = (a.Session.ActiveCharacter!, b.Session.ActiveCharacter!);
-        var petA = a.PetSlot == 0 ? null : ca.Pets.Find(p => p.Slot == a.PetSlot);
-        var petB = b.PetSlot == 0 ? null : cb.Pets.Find(p => p.Slot == b.PetSlot);
-        if (a.Gold > ca.Gold || b.Gold > cb.Gold)
+        var (petA, petB) = (a.Pet, b.Pet);
+        if (a.Gold > ca.Gold || b.Gold > cb.Gold
+            || (long)ca.Gold - a.Gold + b.Gold > BankHandlers.MaxGold || (long)cb.Gold - b.Gold + a.Gold > BankHandlers.MaxGold)
             return PetTradeResult.NoFunds;
-        if (a.PetSlot != 0 && petA is null || b.PetSlot != 0 && petB is null)
-            return PetTradeResult.Cancelled;
+        foreach (var (side, c, pet) in new[] { (a, ca, petA), (b, cb, petB) })
+        {
+            if (pet is not null && Untradable(side.Session, c, pet) is var (r, why))
+            {
+                logger.LogWarning("[{Session}] {Name}: pet trade cancelled, {Pet}: {Why}", side.Session.Id, c.Name, pet.Name, why);
+                return r;
+            }
+        }
         if (!Fits(ca, petA, petB) || !Fits(cb, petB, petA))
             return ca.Pets.Count - (petA is null ? 0 : 1) + (petB is null ? 0 : 1) > Pet.MaxPets
                 || cb.Pets.Count - (petB is null ? 0 : 1) + (petA is null ? 0 : 1) > Pet.MaxPets
@@ -189,20 +203,38 @@ public sealed class PetTradeHandlers(
         receive is null
             || c.Pets.Count - (give is null ? 0 : 1) + 1 <= Pet.MaxPets && !c.Pets.Exists(p => p != give && p.NpcId == receive.NpcId);
 
+    /// <summary>
+    /// Tells why a pet cannot be offered in a trade: it is no longer in the team, it cannot be traded, it has no amity, it is ridden or it is in the
+    /// owner's pet stall.
+    /// </summary>
+    /// <param name="session">The owner's session.</param>
+    /// <param name="c">The owner's character.</param>
+    /// <param name="pet">The pet.</param>
+    /// <returns>The result to send and the reason for the log, or null when the pet may be offered.</returns>
+    private static (PetTradeResult Result, string Why)? Untradable(GameSession session, Character c, Pet pet) =>
+        !c.Pets.Exists(p => ReferenceEquals(p, pet)) ? (PetTradeResult.Cancelled, "the pet is no longer in the team")
+            : pet.Tradable == 0 ? (PetTradeResult.Cancelled, "the pet cannot be traded")
+                : pet.Amity == 0 ? (PetTradeResult.NoAmity, "the pet has no amity")
+                    : session.RidingPetSlot == pet.Slot ? (PetTradeResult.Cancelled, "the pet is ridden")
+                        : session.Stalls.Pets?.Prices.ContainsKey(pet.Slot) == true ? (PetTradeResult.Cancelled, "the pet is in the pet stall")
+                            : null;
+
     /// <summary>Takes a pet away from a character of this server.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The character.</param>
     /// <param name="pet">The pet to remove, or null for none.</param>
-    private void Give(GameSession session, Character c, Pet? pet) => Give(world, session, c, pet);
+    private void Give(GameSession session, Character c, Pet? pet) => Give(world, session, c, pet, combat);
 
     /// <summary>
-    /// Takes a pet away from a character: rests and hides it when it is the active pet, removes it from the list and tells the client.
+    /// Takes a pet away from a character: rests and hides it when it is the active pet, gets the player off it when it is ridden (as
+    /// <see cref="Pets.Exile"/> does), removes it from the list and tells the client.
     /// </summary>
     /// <param name="world">The online sessions.</param>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The character.</param>
     /// <param name="pet">The pet to remove, or null for none.</param>
-    internal static void Give(WorldState world, GameSession session, Character c, Pet? pet)
+    /// <param name="combat">The combat stats, resent when the player gets off the pet; null skips the resend.</param>
+    internal static void Give(WorldState world, GameSession session, Character c, Pet? pet, CombatStats? combat = null)
     {
         if (pet is null)
             return;
@@ -211,6 +243,14 @@ public sealed class PetTradeHandlers(
             c.ActivePetId = 0;
             session.Send(PetMessages.Rest());
             world.HidePet(session);
+        }
+        if (session.RidingPetSlot == pet.Slot)
+        {
+            session.RidingPetSlot = 0;
+            var off = PetMessages.Dismounted(session.Account!.LoginId);
+            session.Send(off);
+            world.Broadcast(session, off, sameMapOnly: true);
+            combat?.Send(session);
         }
         c.Pets.Remove(pet);
         session.Send(PetMessages.Removed(session.Account!.LoginId, pet.Slot));

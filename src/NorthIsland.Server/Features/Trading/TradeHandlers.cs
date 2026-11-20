@@ -60,7 +60,8 @@ public sealed class TradeHandlers(
     internal ValueTask OnRequest(GameSession session, ReadOnlyMemory<byte> body) => OnRequest(session, body, large: false);
 
     /// <summary>
-    /// Opens an item or large-item trade with another player (<c>25/1</c>, <c>25/40</c>), or answers with the reason it is refused.
+    /// Opens an item or large-item trade with another player (<c>25/1</c>, <c>25/40</c>), or answers with the reason it is refused: a side
+    /// already in an item or pet trade, in an event or in a battle, offline, on another map.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: i32 login id of the other player.</param>
@@ -77,17 +78,22 @@ public sealed class TradeHandlers(
             logger.LogInformation("[{Session}] {Name}: trade request refused, less than {Hours} h online", session.Id, character.Name, hours);
             return ValueTask.CompletedTask;
         }
-        if (session.Trades.Items is not null)
+        if (session.Trades.Items is not null || session.Trades.Pets is not null)
             refusal = TradeResult.AlreadyTrading;
+        else if (session.Event is not null)
+            refusal = TradeResult.Busy;
         else if (world.SessionOf(targetId) is not { } target || target.ActiveCharacter is null || ReferenceEquals(target, session))
             refusal = TradeResult.TargetOffline;
         else if (target.ActiveCharacter.MapId != character.MapId)
             refusal = TradeResult.DifferentScene;
         else if (target.Trades.Items is not null
+            || target.Trades.Pets is not null
             || target.Event is not null
             || (large && (session.Stalls.Any || target.Stalls.Any))
             || !OnlineTime.Enough(target, hours, GameClock.UtcNow))
             refusal = TradeResult.TargetBusy;
+        else if (session.Battle is not null || target.Battle is not null)
+            refusal = TradeResult.InBattle;
         else if (large && (character.Level < 10 || target.ActiveCharacter.Level < 10))
         {
             session.Send(new PacketWriter(Action25.Code, Action25.LevelNotice).ToArray());
@@ -112,7 +118,8 @@ public sealed class TradeHandlers(
     }
 
     /// <summary>
-    /// Records the player's offer of gold and bag stacks and shows it to the partner (<c>25/2</c>, <c>25/41</c>). An offer they cannot make cancels
+    /// Records the player's offer of gold and bag stacks and shows it to the partner (<c>25/2</c>, <c>25/41</c>). The offer keeps a copy of each
+    /// stack, and any offer clears the confirmation of both sides, so each confirms what the other offers now. An offer they cannot make cancels
     /// the trade.
     /// </summary>
     /// <param name="session">The player's session.</param>
@@ -124,11 +131,15 @@ public sealed class TradeHandlers(
         var offer = TradeOffer.Parse(body.Span);
         var slots = offer.BagSlots.Distinct().ToList();
         var stacks = slots.Select(s => character.Bag.Find(b => b.Slot == s)).ToList();
-        if (offer.Gold < 0 || offer.Gold > character.Gold || stacks.Any(s => s is null || Bag.IsNoTrade(items, s)) || slots.Any(s => session.Vehicle?.BagSlot == s))
+        var why = offer.Gold < 0 || offer.Gold > character.Gold
+            ? "not that much gold"
+            : stacks.Select(s => Untradable(session, s)).FirstOrDefault(w => w is not null);
+        if (why is not null)
         {
             logger.LogWarning(
-                "[{Session}] trade offer refused: gold {Gold} (has {Has}), slots {Slots}",
+                "[{Session}] trade offer refused, {Why}: gold {Gold} (has {Has}), slots {Slots}",
                 session.Id,
+                why,
                 offer.Gold,
                 character.Gold,
                 string.Join(',', slots));
@@ -145,10 +156,11 @@ public sealed class TradeHandlers(
                 return ValueTask.CompletedTask;
             var side = trade.Of(session);
             side.Gold = offer.Gold;
-            side.BagSlots.Clear();
-            side.BagSlots.AddRange(slots);
+            side.Stacks.Clear();
+            side.Stacks.AddRange(stacks.Select(s => GridStore.Copy(s!, s!.Slot, s.Count)));
             side.Offered = true;
-            side.Confirmed = false;
+            trade.First.Confirmed = false;
+            trade.Second.Confirmed = false;
             partner = trade.PartnerOf(session).Session;
         }
         partner.Send(trade.Large
@@ -199,7 +211,10 @@ public sealed class TradeHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Carries out a confirmed trade: checks gold, stacks and room on both sides, then moves the stacks and the gold difference.</summary>
+    /// <summary>
+    /// Carries out a confirmed trade: checks gold, that each offered slot still holds the very stack offered and may still be given, and room on
+    /// both sides, then moves the stacks and the gold difference.
+    /// </summary>
     /// <param name="trade">The trade, locked by the caller.</param>
     /// <returns>The result sent to both players.</returns>
     private TradeResult Execute(Trade trade)
@@ -211,9 +226,7 @@ public sealed class TradeHandlers(
         if (a.Gold > ca.Gold || b.Gold > cb.Gold
             || (long)cb.Gold - b.Gold + a.Gold > BankHandlers.MaxGold || (long)ca.Gold - a.Gold + b.Gold > BankHandlers.MaxGold)
             return TradeResult.NoFunds;
-        var giveA = Stacks(ca, a.BagSlots);
-        var giveB = Stacks(cb, b.BagSlots);
-        if (giveA is null || giveB is null)
+        if (Stacks(a, ca) is not { } giveA || Stacks(b, cb) is not { } giveB)
             return TradeResult.Cancelled;
         var fitsA = Fits(ca, giveA, giveB);
         var fitsB = Fits(cb, giveB, giveA);
@@ -319,15 +332,41 @@ public sealed class TradeHandlers(
         return receive.All(s => Bag.Add(trial, items, s.ItemId, s.Count, s.Wear).Sum(c => c.Added) == s.Count);
     }
 
-    /// <summary>Looks up the bag stacks of the offered slots.</summary>
-    /// <param name="character">The character.</param>
-    /// <param name="slots">The offered bag slots.</param>
-    /// <returns>The stacks, or null when a slot no longer holds one.</returns>
-    private static List<BagItem>? Stacks(Character character, List<byte> slots)
+    /// <summary>
+    /// Looks up the bag stacks of one side's offer and checks each slot still holds the stack copied at offer time (same item, count and every
+    /// attribute) and that it may still be given; logs why when not.
+    /// </summary>
+    /// <param name="side">The side whose offer is checked.</param>
+    /// <param name="character">The character of that side.</param>
+    /// <returns>The stacks now in the bag, or null when the trade must be cancelled.</returns>
+    private List<BagItem>? Stacks(TradeSide side, Character character)
     {
-        var stacks = slots.Select(s => character.Bag.Find(b => b.Slot == s)).ToList();
-        return stacks.Any(s => s is null) ? null : [.. stacks.OfType<BagItem>()];
+        List<BagItem> stacks = [];
+        foreach (var offered in side.Stacks)
+        {
+            var stack = character.Bag.Find(b => b.Slot == offered.Slot);
+            var why = stack is not null && (!GridStore.Same(stack, offered) || stack.Count != offered.Count)
+                ? "the stack changed since the offer"
+                : Untradable(side.Session, stack);
+            if (why is not null)
+            {
+                logger.LogWarning("[{Session}] {Name}: trade cancelled, bag slot {Slot}: {Why}", side.Session.Id, character.Name, offered.Slot, why);
+                return null;
+            }
+            stacks.Add(stack!);
+        }
+        return stacks;
     }
+
+    /// <summary>Tells why a bag stack cannot be offered in a trade: there is none, its item cannot be given, or it is the ridden vehicle.</summary>
+    /// <param name="session">The owner's session.</param>
+    /// <param name="stack">The stack in the offered slot, or null when the slot is empty.</param>
+    /// <returns>The reason for the log, or null when the stack may be offered.</returns>
+    private string? Untradable(GameSession session, BagItem? stack) =>
+        stack is null ? "the slot is empty"
+            : Bag.IsNoTrade(items, stack) ? "the item cannot be traded"
+                : session.Vehicle?.BagSlot == stack.Slot ? "the stack is the ridden vehicle"
+                    : null;
 
     /// <summary>Describes stacks as item names with counts, for the log.</summary>
     /// <param name="stacks">The stacks.</param>
