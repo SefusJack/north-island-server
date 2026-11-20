@@ -600,7 +600,8 @@ public sealed class TentHandlers(
     {
         var stack = character.Bag.Find(b => b.Slot == slot);
         var item = stack is null ? null : items[stack.ItemId];
-        if (stack is null || item is null || item.IsEquipment || item.Type == TentItemType || character.Furniture.Count >= Furniture.MaxPieces)
+        if (stack is null || item is null || item.IsEquipment || item.Type == TentItemType || character.Furniture.Count >= Furniture.MaxPieces
+            || session.Vehicle?.BagSlot == slot)
         {
             logger.LogWarning("[{Session}] {Name}: {What}: bag slot {Slot} cannot be used", session.Id, character.Name, what, slot);
             return null;
