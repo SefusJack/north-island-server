@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 using NorthIsland.Protocol.IO;
+using NorthIsland.Protocol.Messages.Items;
 using NorthIsland.Protocol.Opcodes;
 
 namespace NorthIsland.Server.Features.Houses;
@@ -79,7 +80,10 @@ public sealed class MaidHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Changes the maid into a costume if the owner has the suit in the bag; otherwise closes the maid's window.</summary>
+    /// <summary>
+    /// Changes the maid into a costume if the owner has the suit in the bag, using one suit up; otherwise closes the maid's window. The piece
+    /// becomes the costume's maid item, as the client shows it, so taking it back gives that item.
+    /// </summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="c">The player's character.</param>
     /// <param name="owner">The owner of the house.</param>
@@ -96,9 +100,14 @@ public sealed class MaidHandlers(
         if (!ReferenceEquals(owner.Character, c) || !Costumes.TryGetValue(choice, out var costume)
             || c.Bag.Find(b => b.Slot == bagSlot) is not { } suit || suit.ItemId != costume.Suit || piece.ItemId == costume.Maid)
         {
+            logger.LogWarning("[{Session}] {Name}: maid {Furn} costume {Choice} from bag slot {Slot}: refused", session.Id, c.Name, piece.Index, choice, bagSlot);
             session.Send(new PacketWriter(Action76.Code, Action76.Hide).ToArray());
             return;
         }
+        suit.Count--;
+        if (suit.Count == 0)
+            c.Bag.Remove(suit);
+        session.Send(ItemMessages.BagSlotDecrease(suit.Slot, 1));
         piece.ItemId = costume.Maid;
         session.Send(new PacketWriter(Action76.Code, Action76.Costume).U8((byte)piece.Index).U16(costume.Maid).ToArray());
         logger.LogInformation("[{Session}] {Name}: the maid {Furn} changes into {Item}", session.Id, c.Name, piece.Index, costume.Maid);
