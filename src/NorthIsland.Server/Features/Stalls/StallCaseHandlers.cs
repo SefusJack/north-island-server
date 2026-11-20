@@ -48,6 +48,14 @@ public sealed class StallCaseHandlers(
     /// <returns>True when sellable.</returns>
     private bool Sellable(ushort itemId) => items[itemId] is { } r && r.Type is 23 or 32 && (r.Flags & 2) == 0;
 
+    /// <summary>
+    /// Tells whether a stack carries nothing a case cannot keep. A case keeps only the item id, the count and the wear and gives its items back
+    /// with nothing else, so a stack with a pose, a stone, a fusion level, a used or extra amount or a box would lose it, or have it reset.
+    /// </summary>
+    /// <param name="stack">The bag stack.</param>
+    /// <returns>True when the stack can go into a case unchanged.</returns>
+    private static bool Plain(BagItem stack) => GridStore.Same(stack, new BagItem { ItemId = stack.ItemId, Wear = stack.Wear });
+
     /// <summary>Builds the packet that shows or updates a case.</summary>
     /// <param name="owner">The owner's login id.</param>
     /// <param name="c">The case.</param>
@@ -126,6 +134,12 @@ public sealed class StallCaseHandlers(
         var stack = c.Bag.Find(b => b.Slot == bagSlot);
         if (shelf is null || stack is null || !Sellable(stack.ItemId) || price is < 1 or > MaxPrice)
             return;
+        if (!Plain(stack))
+        {
+            logger.LogWarning("[{Session}] {Name}: stall case refused for bag slot {Slot}: the stack carries more than a case keeps", session.Id, c.Name,
+                bagSlot);
+            return;
+        }
         var freeCase = Enumerable.Range(1, Cases).Select(i => (byte)i).FirstOrDefault(i => !c.StallCases.Exists(x => x.Case == i));
         var pos = Enumerable.Range(1, Positions).Select(i => (byte)i).FirstOrDefault(i => !c.StallCases.Exists(x => x.FurnIndex == furn && x.Pos == i));
         if (freeCase == 0 || pos == 0)
@@ -149,7 +163,7 @@ public sealed class StallCaseHandlers(
         Broadcast(session, c, Update(session.Account!.LoginId, stall));
     }
 
-    /// <summary>Adds items from a bag stack to a case of the same item.</summary>
+    /// <summary>Adds items from a bag stack to a case of the same item with the same wear, so taking them back cannot change their wear.</summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="c">The owner's character.</param>
     /// <param name="furn">The shelf's furniture index.</param>
@@ -168,6 +182,12 @@ public sealed class StallCaseHandlers(
         var stack = c.Bag.Find(b => b.Slot == bagSlot);
         if (stall is null || stack is null || stack.ItemId != stall.ItemId)
             return;
+        if (stack.Wear != stall.Wear || !Plain(stack))
+        {
+            logger.LogWarning("[{Session}] {Name}: bag slot {Slot} not added to stall case {Case}: not the same wear or carries more than a case keeps",
+                session.Id, c.Name, bagSlot, caseNo);
+            return;
+        }
         var moved = Math.Min(stack.Count, MaxStock - stall.Stock);
         if (room > 0)
             moved = Math.Min(moved, room);
@@ -269,9 +289,13 @@ public sealed class StallCaseHandlers(
             return ValueTask.CompletedTask;
         }
         var total = (long)price * count;
-        if (me.Gold < total || oc.Gold + total > int.MaxValue)
+        if (me.Gold < total || oc.Gold + total > BankHandlers.MaxGold)
+        {
+            logger.LogWarning("[{Session}] {Name} cannot buy from {Owner}'s stall case: {Why}", session.Id, me.Name, oc.Name,
+                me.Gold < total ? "not enough gold" : "the owner's purse is full");
             return ValueTask.CompletedTask;
-        var trial = me.Bag.Select(b => new BagItem { Slot = b.Slot, ItemId = b.ItemId, Count = b.Count, Wear = b.Wear }).ToList();
+        }
+        var trial = me.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count)).ToList();
         if (Bag.Add(trial, items, stall.ItemId, count, stall.Wear).Sum(x => x.Added) != count)
         {
             session.Send(Refuse(5));
