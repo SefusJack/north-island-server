@@ -60,7 +60,10 @@ public sealed class ForageHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Called every second: when the search is due, takes the wanted items from the ground into the bag and reports what was found.</summary>
+    /// <summary>
+    /// Called every second: when the search is due, takes the wanted items from the ground into the bag and reports what was found. An index
+    /// found holding the wanted item is taken only while it still holds that item, not another thing dropped into the freed index.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     public void Tick(GameSession session)
     {
@@ -72,7 +75,8 @@ public sealed class ForageHandlers(
         {
             if (Bag.FreeSlot(c, items, job.ItemId) == 0 && !c.Bag.Exists(b => b.ItemId == job.ItemId && b.Count < Bag.MaxStack))
                 break;
-            if (ground.Take(session, index) is not { } thing)
+            var thing = ground.TakeIf(session, index, (t, _, _) => t.ItemId != job.ItemId || t.Gold != 0 ? "another thing lies there now" : null, out _);
+            if (thing is null)
                 continue;
             foreach (var (stack, added) in Bag.Add(c, items, thing.ItemId, Math.Max(1, thing.Count), thing.Wear))
                 session.Send(ItemMessages.BagAdd(new BagEntry { Slot = stack.Slot, ItemId = stack.ItemId, Count = added, Wear = stack.Wear }));
