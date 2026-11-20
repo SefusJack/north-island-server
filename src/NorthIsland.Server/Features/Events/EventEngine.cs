@@ -136,8 +136,8 @@ public sealed partial class EventEngine(
         var name = source is EveNpc npc ? $"NPC {index} (npc {npc.NpcId})" : $"door {index}";
         if (Refusal(session, character, scene, source, trigger, index) is { } refused)
         {
-            logger.LogWarning("[{Session}] {Source} on map {Map} by trigger {Trigger} at ({X}, {Y}): {Why}, refused", session.Id, name, character.MapId,
-                trigger, character.X, character.Y, refused);
+            logger.LogWarning("[{Session}] {Source} on map {Map} by trigger {Trigger} at ({X}, {Y}): {Why}, refused", session.Id, name,
+                character.MapId, trigger, character.X, character.Y, refused);
             session.Send(EventMessages.Finished());
             return;
         }
@@ -182,11 +182,14 @@ public sealed partial class EventEngine(
         // event flag 2: the event starts when the player comes near; the client does that only for an NPC without a roaming area
         if (trigger == TriggerNear && (World.NpcWander.Roams(npc) || !events.Exists(e => (e.Flags & 2) != 0)))
             return "the NPC does not start near";
-        if (session.NpcVisibility.TryGetValue((ushort)index, out var shown) && shown is { Shown: false, Seconds: ushort.MaxValue }) // 65535 s: for good
+        if (session.NpcVisibility.TryGetValue((ushort)index, out var shown)
+            && shown is { Shown: false, Seconds: ushort.MaxValue }) // 65535 s: hidden for good
             return "the NPC is hidden";
         if (session.HiddenNpcs.TryGetValue(((ushort)character.MapId, (ushort)index), out var until) && until > GameClock.UtcNow)
             return "the NPC is hidden";
-        var (reachX, reachY) = trigger == TriggerClick ? (TriggerReach.NpcClick, TriggerReach.NpcClick) : (TriggerReach.ScreenX, TriggerReach.ScreenY);
+        var (reachX, reachY) = trigger == TriggerClick
+            ? (TriggerReach.NpcClick, TriggerReach.NpcClick)
+            : (TriggerReach.ScreenX, TriggerReach.ScreenY);
         return TriggerReach.Of(npc).Reaches(character.X, character.Y, reachX, reachY) ? null : "out of reach";
     }
 
@@ -360,7 +363,8 @@ public sealed partial class EventEngine(
             logger.LogWarning("[{Session}] {Source}: minigame {Kind} won after {Seconds:0.0} s, sooner than {Least} s; counted as lost", session.Id,
                 run.Source, kind, played.TotalSeconds, SportPlay.Least(kind).TotalSeconds);
         else if (result > counted)
-            logger.LogWarning("[{Session}] {Source}: minigame {Kind} result {Result} kept as {Counted}", session.Id, run.Source, kind, result, counted);
+            logger.LogWarning("[{Session}] {Source}: minigame {Kind} result {Result} kept as {Counted}", session.Id, run.Source, kind, result,
+                counted);
         run.Rolls[kind] = counted;
         run.PendingMinigame = null;
         run.MinigameStartedUtc = null;
@@ -614,9 +618,9 @@ public sealed partial class EventEngine(
         Finish(session, run);
     }
 
-    /// <summary>Tells whether a result changes the player's state on the server, so it is applied as soon as its stretch of the group starts.</summary>
+    /// <summary>Tells whether a result changes the player's state on the server, so it is applied when its stretch of the group starts.</summary>
     /// <param name="action">The result's action.</param>
-    /// <returns>True for items, gold, experience, gathering, skills, cooldowns, marks, team NPCs, hire charges, role changes and instance goals.</returns>
+    /// <returns>True for items, gold, experience, gathering, skills, cooldowns, marks, team NPCs, hire charges, roles and instance goals.</returns>
     private static bool IsApplied(ResultAction action) => action is ResultAction.Item or ResultAction.Gold or ResultAction.Exp or ResultAction.Gather
         or ResultAction.LearnSkill or ResultAction.Cooldown or ResultAction.Mark or ResultAction.Amity or ResultAction.TeamNpc or ResultAction.Hire
         or ResultAction.RoleChange or ResultAction.InstanceGoal or ResultAction.InstanceGoalDefined;
@@ -673,7 +677,8 @@ public sealed partial class EventEngine(
         }
 
         // without the skill a gathering spot gives nothing and starts no cooldown: the group ends with the player's line there
-        var missing = segment.FindIndex(s => s.Mapped.Action == ResultAction.Gather && character.Skill(GatherPools.SkillFor(s.Mapped.Service)) is null);
+        var missing = segment.FindIndex(s => s.Mapped.Action == ResultAction.Gather
+            && character.Skill(GatherPools.SkillFor(s.Mapped.Service)) is null);
         if (missing >= 0)
         {
             logger.LogInformation("[{Session}] {Source}: {What}: the skill is missing", session.Id, run.Source, segment[missing].Mapped.Description);
@@ -686,7 +691,8 @@ public sealed partial class EventEngine(
         {
             if (Unpaid(character, segment) is { } unpaid && segment.Exists(s => IsReward(s.Record, s.Mapped)))
             {
-                logger.LogWarning("[{Session}] {Source}: the group takes {Unpaid} the player lacks; its results are dropped", session.Id, run.Source, unpaid);
+                logger.LogWarning("[{Session}] {Source}: the group takes {Unpaid} the player lacks; its results are dropped", session.Id,
+                    run.Source, unpaid);
                 run.Pending.Clear();
                 return;
             }
@@ -706,7 +712,10 @@ public sealed partial class EventEngine(
             run.Steps.Enqueue(new EventStep(default, new EventResult(1, 7, 0, 1, 0, NothingToCollectTalk))); // 7 Mode
     }
 
-    /// <summary>Finds a take of a stretch of results that the player cannot pay in full: more of an item than their bag holds, or more gold than they have.</summary>
+    /// <summary>
+    /// Finds a take of a stretch of results that the player cannot pay in full: more of an item than their bag holds, or more gold than
+    /// they have.
+    /// </summary>
     /// <param name="character">The character.</param>
     /// <param name="segment">The stretch of results.</param>
     /// <returns>A description of the first take that cannot be paid, for the log; null when all can.</returns>
@@ -753,7 +762,8 @@ public sealed partial class EventEngine(
                 return null;
 
             case ResultAction.Gather: // the resource of a gathering spot, which also trains its skill
-                if (PickGather(session, run, mapped) is not { } resource || ApplyItem(session, character, run, resource) is not (> 0 and var collected))
+                if (PickGather(session, run, mapped) is not { } resource
+                    || ApplyItem(session, character, run, resource) is not (> 0 and var collected))
                     return null;
                 lifeSkills.Train(session, GatherPools.SkillFor(mapped.Service));
                 return resource.Wire with { Value = collected };
@@ -769,7 +779,8 @@ public sealed partial class EventEngine(
 
             case ResultAction.Mark: // change a quest mark; pay its stars when the quest is finished
                 var finished = ApplyMark(session, character, record);
-                logger.LogInformation("[{Session}] {Source}: {What} (now {Count})", session.Id, run.Source, mapped.Description, character.MarkCount(record.SubKind));
+                logger.LogInformation("[{Session}] {Source}: {What} (now {Count})", session.Id, run.Source, mapped.Description,
+                    character.MarkCount(record.SubKind));
                 if (!finished || marks.Stars(record.SubKind) is not (> 0 and var stars))
                     return null;
                 var star = ResultMapper.Map(new EveScriptRecord(record.Step, 1, 1, 1, StarItem, 0, stars, 0, 0, 0));
