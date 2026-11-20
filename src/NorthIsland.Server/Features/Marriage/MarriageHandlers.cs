@@ -134,7 +134,10 @@ public sealed class MarriageHandlers(
             spouse.Send(MarriageMessages.SpouseOnline(false));
     }
 
-    /// <summary>Delivers a letter from the player to their spouse as mail; it is dropped when the addressed name is not the spouse's.</summary>
+    /// <summary>
+    /// Delivers a letter from the player to their spouse as mail; it is dropped when the addressed name is not the spouse's, the text is longer than
+    /// a friend mail or the session mailed too recently.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
     internal async ValueTask OnSpouseMail(GameSession session, ReadOnlyMemory<byte> body)
@@ -149,6 +152,11 @@ public sealed class MarriageHandlers(
         var id = session.Account!.LoginId;
         if (text.Length == 0 || marriages.CoupleOf(id) is not { } couple)
             return;
+        if (text.Length > FriendHandlers.MaxMailText || !FriendHandlers.TakeMailTurn(session))
+        {
+            logger.LogWarning("[{Session}] {Name}: spouse mail refused ({Length} characters, or too soon)", session.Id, character.Name, text.Length);
+            return;
+        }
         var spouse = couple.SpouseOf(id);
         if (!string.Equals(spouse.Name, GmTag.Strip(name), StringComparison.OrdinalIgnoreCase))
         {

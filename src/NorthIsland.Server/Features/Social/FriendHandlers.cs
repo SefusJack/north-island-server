@@ -14,6 +14,15 @@ public sealed class FriendHandlers(
     WorldState world,
     ILogger<FriendHandlers> logger)
 {
+    /// <summary>Longest mail text in characters, as the client's mail form allows (views/mail/SendMailWindow.xml).</summary>
+    public const int MaxMailText = 152;
+
+    /// <summary>Most mails that wait in the mailbox of an offline character; further mails are dropped until they log in.</summary>
+    public const int MaxMailbox = 100;
+
+    /// <summary>Shortest time between two mails of one session.</summary>
+    public static readonly TimeSpan MailWait = TimeSpan.FromSeconds(2);
+
     /// <summary>
     /// Sends the friend list on login: the GM center entry, every friend with fresh data and online state, tells friends the player is online, and
     /// delivers waiting mail.
@@ -96,7 +105,14 @@ public sealed class FriendHandlers(
         if (world.SessionOf(requesterId) is not { } requester || requester.ActiveCharacter is not { } other)
             return;
         var myId = session.Account!.LoginId;
-        if (answer == 1 && !character.Friends.Exists(f => f.Id == requesterId))
+        if (answer == 1 && (character.Friends.Count >= FriendEntry.MaxFriends || other.Friends.Count >= FriendEntry.MaxFriends))
+        {
+            logger.LogWarning("[{Session}] {Name}: friend answer to {Other} refused, a friend list is full", session.Id, character.Name, other.Name);
+            session.Send(FriendMessages.ListFull());
+            requester.Send(FriendMessages.ListFull());
+            return;
+        }
+        if (answer == 1 && !character.Friends.Exists(f => f.Id == requesterId) && !other.Friends.Exists(f => f.Id == myId))
         {
             var mine = new FriendEntry { Id = requesterId };
             Refresh(mine, other);
@@ -137,7 +153,22 @@ public sealed class FriendHandlers(
         logger.LogInformation("[{Session}] {Name} deletes friend {Id}", session.Id, character.Name, friendId);
     }
 
-    /// <summary>Handles a mail to one or more players.</summary>
+    /// <summary>Takes the session's turn to send a mail: refused while <see cref="MailWait"/> has not passed since its last mail.</summary>
+    /// <param name="session">The sender's session.</param>
+    /// <returns>True when the session may send now; its last mail time is then set.</returns>
+    public static bool TakeMailTurn(GameSession session)
+    {
+        var now = GameClock.UtcNow;
+        if (now - session.Friends.LastMailUtc < MailWait)
+            return false;
+        session.Friends.LastMailUtc = now;
+        return true;
+    }
+
+    /// <summary>
+    /// Handles a mail to one or more friends: the text must fit the client's form, the session must have waited <see cref="MailWait"/> since its
+    /// last mail, and each recipient must be on the sender's friend list.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: a count, that many login ids, then the text.</param>
     internal async ValueTask OnMail(GameSession session, ReadOnlyMemory<byte> body)
@@ -148,12 +179,27 @@ public sealed class FriendHandlers(
         if (body.Length < 1 + 4 * count)
             return;
         var text = GameEncoding.GetString(body.Span[(1 + 4 * count)..]);
-        var targets = new int[count];
+        if (text.Length == 0 || text.Length > MaxMailText || count > FriendEntry.MaxFriends)
+        {
+            logger.LogWarning("[{Session}] {Name}: mail refused ({Count} recipients, {Length} characters)", session.Id, character.Name, count, text.Length);
+            return;
+        }
+        if (!TakeMailTurn(session))
+        {
+            logger.LogWarning("[{Session}] {Name}: mail refused, sent too soon after the last one", session.Id, character.Name);
+            return;
+        }
+        var targets = new HashSet<int>();
         for (var i = 0; i < count; i++)
-            targets[i] = BinaryPrimitives.ReadInt32LittleEndian(body.Span[(1 + 4 * i)..]);
+            targets.Add(BinaryPrimitives.ReadInt32LittleEndian(body.Span[(1 + 4 * i)..]));
         var myId = session.Account!.LoginId;
         foreach (var targetId in targets)
         {
+            if (!character.Friends.Exists(f => f.Id == targetId))
+            {
+                logger.LogWarning("[{Session}] {Name}: mail to {Id}, who is not a friend", session.Id, character.Name, targetId);
+                continue;
+            }
             if (!await DeliverAsync(myId, targetId, text, session).ConfigureAwait(false))
             {
                 logger.LogWarning("[{Session}] {Name}: mail to unknown player {Id}", session.Id, character.Name, targetId);
@@ -165,13 +211,13 @@ public sealed class FriendHandlers(
 
     /// <summary>
     /// Delivers a mail: straight to an online player, or into the mailbox of the first character of an offline account. A block list entry refuses
-    /// it.
+    /// it, and a mailbox that holds <see cref="MaxMailbox"/> mails drops it.
     /// </summary>
     /// <param name="senderId">The sender's login id.</param>
     /// <param name="targetId">The recipient's login id.</param>
     /// <param name="text">The mail text.</param>
     /// <param name="sender">The sender's session; null skips the block check and the refusal message.</param>
-    /// <returns>False when the recipient does not exist, true otherwise (also when blocked).</returns>
+    /// <returns>False when the recipient does not exist, true otherwise (also when blocked or the mailbox is full).</returns>
     public async Task<bool> DeliverAsync(int senderId, int targetId, string text, GameSession? sender = null)
     {
         var time = GameClock.Now.ToOADate();
@@ -190,6 +236,11 @@ public sealed class FriendHandlers(
         if (sender is not null && BlocklistHandlers.Blocks(offline, senderId))
         {
             BlocklistHandlers.Refuse(sender, 2);
+            return true;
+        }
+        if (offline.Mailbox.Count >= MaxMailbox)
+        {
+            logger.LogWarning("Mail from {Sender} to {Target} dropped: the mailbox is full", senderId, targetId);
             return true;
         }
         offline.Mailbox.Add(new Mail { SenderId = senderId, Time = time, Text = text });
