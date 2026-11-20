@@ -16,7 +16,7 @@ public sealed class ShopHandlers(
 {
     /// <summary>
     /// Handles a sell request (<c>27/2</c>): removes the listed bag stacks and pays their sell price, or answers with a failure. Needs the sell
-    /// window of an NPC open (<see cref="NpcService.AtNpc"/>).
+    /// window of an NPC open (<see cref="NpcService.AtNpc"/>), and room in the purse for the whole price.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the sale kind and the bag slots to sell.</param>
@@ -57,16 +57,26 @@ public sealed class ShopHandlers(
             return ValueTask.CompletedTask;
         }
 
-        var total = stacks.Sum(s => (long)s.Count * items[s.ItemId]!.SellPrice);
+        var total = stacks.Sum(s => (long)s.Count * Math.Max(0, items[s.ItemId]!.SellPrice));
+        if (character.Gold + total > BankHandlers.MaxGold)
+        {
+            logger.LogInformation(
+                "[{Session}] {Name}: sale for {Total} gold does not fit the purse ({Gold})",
+                session.Id,
+                character.Name,
+                total,
+                character.Gold);
+            session.Send(PlayerMessages.MoneyBagFull());
+            session.Send(ShopMessages.SellResult(SellResult.Failed));
+            return ValueTask.CompletedTask;
+        }
         var sold = string.Join(", ", stacks.Select(s => $"{items[s.ItemId]!.Name} x{s.Count}"));
         foreach (var stack in stacks)
         {
             session.Send(ItemMessages.BagSlotDecrease(stack.Slot, stack.Count));
             character.Bag.Remove(stack);
         }
-        character.Gold = (int)Math.Min(int.MaxValue, character.Gold + total);
-        if (total > 0)
-            session.Send(PlayerMessages.MoneyChange((int)total));
+        Purse.Credit(session, character, total);
         session.Send(ShopMessages.SellResult(SellResult.Ok));
         logger.LogInformation("[{Session}] {Name} sells {Items} for {Total} gold ({Gold} now)", session.Id, character.Name, sold, total, character.Gold);
         return ValueTask.CompletedTask;
@@ -86,7 +96,10 @@ public sealed class ShopHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Buys the cart: checks the open store, rows, gold and bag room, then charges and fills the bag, all or nothing.</summary>
+    /// <summary>
+    /// Buys the cart: checks the open store, rows, gold and bag room, then charges and fills the bag, all or nothing. A row whose item has no
+    /// price is refused, since it could be sold back for gold.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's character.</param>
     /// <param name="request">The parsed cart.</param>
@@ -107,6 +120,11 @@ public sealed class ShopHandlers(
             if (row < 1 || row > rows.Count || count == 0 || items[rows[row - 1]] is not { } item)
             {
                 logger.LogWarning("[{Session}] buy: store {Store} has no row {Row}", session.Id, store.Index, row);
+                return BuyResult.Failed;
+            }
+            if (item.Price <= 0)
+            {
+                logger.LogWarning("[{Session}] buy: row {Row} of store {Store} ({Item}) has no price", session.Id, row, store.Index, item.Name);
                 return BuyResult.Failed;
             }
             lines.Add((item.Id, count, item.Price));
