@@ -12,6 +12,15 @@ public sealed class HouseLifeOptions
     /// <summary>The most tents on the server; 0 means no limit.</summary>
     public int TentsPerServer { get; set; }
 
+    /// <summary>
+    /// The farthest a player may stand from a tent, in pixels across, to go in by clicking it. The client sends the click from anywhere on its
+    /// 800 by 600 pixel game screen without walking up, so the default is the screen width; 0 means no limit.
+    /// </summary>
+    public int TentReachX { get; set; } = 800;
+
+    /// <summary>The farthest a player may stand from a tent, in pixels up or down, to go in by clicking it: by default the screen height; 0 means no limit.</summary>
+    public int TentReachY { get; set; } = 600;
+
     /// <summary>Minutes of bath boost one Spa Bun gives.</summary>
     public int SpaBunMinutes { get; set; } = 30;
 
