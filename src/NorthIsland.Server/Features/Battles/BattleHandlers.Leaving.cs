@@ -115,12 +115,40 @@ public sealed partial class BattleHandlers
         string how,
         bool fled = false)
     {
+        if (TryClaimEnd(battle))
+            Close(session, battle, outcome, how, fled);
+    }
+
+    /// <summary>Marks a battle over, once: of several near-simultaneous ends, only the first goes on to settle the battle.</summary>
+    /// <param name="battle">The battle.</param>
+    /// <returns>True for the caller that ended it; false when it was already over.</returns>
+    private static bool TryClaimEnd(Battle battle)
+    {
         lock (battle.Lock)
         {
             if (battle.Phase == BattlePhase.Over)
-                return;
+                return false;
             battle.Phase = BattlePhase.Over;
+            return true;
         }
+    }
+
+    /// <summary>
+    /// Settles a battle its caller marked over with <see cref="TryClaimEnd"/>: gives out the drops, takes every player out, stops the
+    /// watchers and handles the monster that started it.
+    /// </summary>
+    /// <param name="session">The session used for logging.</param>
+    /// <param name="battle">The battle.</param>
+    /// <param name="outcome">How the battle ended for the players.</param>
+    /// <param name="how">Text for the log that says why it ended.</param>
+    /// <param name="fled">True when the players fled.</param>
+    private void Close(
+        GameSession session,
+        Battle battle,
+        BattleOutcome outcome,
+        string how,
+        bool fled = false)
+    {
         foreach (var monster in battle.Monsters.ToList())
             GiveDropInBattle(battle, monster);
         foreach (var player in battle.ActivePlayers.ToList())
@@ -135,7 +163,10 @@ public sealed partial class BattleHandlers
             battle.EventBattleIndex, how, outcome, battle.Round);
     }
 
-    /// <summary>Takes one player and their pet out of the battle and settles what the battle cost or gave them.</summary>
+    /// <summary>
+    /// Takes one player and their pet out of the battle and settles what the battle cost or gave them, once per player: a later call for the
+    /// same player does nothing.
+    /// </summary>
     /// <param name="logSession">The session used for logging.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="player">The player fighter who leaves.</param>
@@ -148,6 +179,12 @@ public sealed partial class BattleHandlers
         BattleOutcome outcome,
         bool alsoTell)
     {
+        lock (battle.Lock)
+        {
+            if (player.Settled)
+                return;
+            player.Settled = true;
+        }
         var pet = battle.PetOf(player);
         var session = player.Session;
         if (session is null)
@@ -164,34 +201,19 @@ public sealed partial class BattleHandlers
         else
             SendFightState(session, 0, skip: null);
 
-        var deathCosts = !UseToyPuppet(session, player, pet);
+        // the pet on the field when it is down, and every pet that fell earlier and was taken off the field for another
+        List<Fighter> fallenPets = [.. battle.FallenPetsOf(player)];
+        if (pet is { IsAlive: false })
+            fallenPets.Add(pet);
+        var deathCosts = !UseToyPuppet(session, player, fallenPets);
         if (!player.IsAlive && deathCosts && session.ActiveCharacter is { } fallenPlayer)
             player.ExpLost = LoseExp(session, fallenPlayer);
 
-        Data.Pet? ranAway = null;
-        if (deathCosts && pet is { IsAlive: false, OwnedPet: { LeaseUntil: null } fallen })
+        List<Data.Pet> ranAway = [];
+        foreach (var fallenPet in fallenPets)
         {
-            var o = petOptions.Value;
-            if (o.PetDefeatAmityLoss > 0)
-            {
-                fallen.Amity = (byte)Math.Max(0, fallen.Amity - o.PetDefeatAmityLoss);
-                session.Send(PetMessages.SetAttribute(fallen.Slot, Action8.AttrAmity, fallen.Amity));
-                logger.LogInformation("[{Session}] pet {Pet} fell: amity {Amity}", session.Id, fallen.Name, fallen.Amity);
-            }
-            if (o.PetDefeatExpLossPercent > 0 && formulas.Table is { } f && session.ActiveCharacter is { } owner
-                && !EventArenas.IsArena(owner.MapId) && !TimedEffects.ExpProtected(owner, TimedEffects.Now))
-            {
-                var floor = f.TotalLevelExp(fallen.Level, fallen.Reborn);
-                var lost = Math.Clamp(f.LevelUpExp(fallen.Level, fallen.Reborn) * o.PetDefeatExpLossPercent / 100, 0, Math.Max(0, fallen.Exp - floor));
-                if (lost > 0)
-                {
-                    fallen.Exp -= lost;
-                    session.Send(PetMessages.SetAttribute(fallen.Slot, Action8.AttrExp, fallen.Exp));
-                    logger.LogInformation("[{Session}] pet {Pet} fell: -{Exp} exp", session.Id, fallen.Name, lost);
-                }
-            }
-            if (fallen.Amity < o.PetRunAwayAmity && GameRandom.Shared.Next(100) < o.PetRunAwayChancePercent)
-                ranAway = fallen;
+            if (deathCosts && fallenPet.OwnedPet is { LeaseUntil: null } fallen && PetFalls(session, fallen))
+                ranAway.Add(fallen);
         }
 
         if (pet is { IsAlive: true, Left: false })
@@ -223,12 +245,14 @@ public sealed partial class BattleHandlers
             var petGap = pet?.OwnedPet is { } fighting && Durability.Wears(fighting.Level, highest, wear.WearMinLevelGap);
             Durability.AfterBattle(session.Send, character, pet?.OwnedPet, (e, onPet) => Durability.WearOf(items[e.ItemId], onPet ? petGap : playerGap, wear));
 
-            if (pet is { OwnedPet: { } activePet })
+            foreach (var petFighter in pet is null ? battle.FallenPetsOf(player) : battle.FallenPetsOf(player).Append(pet))
             {
-                activePet.Hp = Math.Max(1, pet.Hp);
-                activePet.Sp = pet.Sp;
-                session.Send(PetMessages.SetAttribute(activePet.Slot, Action8.AttrHp, activePet.Hp));
-                session.Send(PetMessages.SetAttribute(activePet.Slot, Action8.AttrSp, activePet.Sp));
+                if (petFighter.OwnedPet is not { } fought)
+                    continue;
+                fought.Hp = Math.Max(1, petFighter.Hp);
+                fought.Sp = petFighter.Sp;
+                session.Send(PetMessages.SetAttribute(fought.Slot, Action8.AttrHp, fought.Hp));
+                session.Send(PetMessages.SetAttribute(fought.Slot, Action8.AttrSp, fought.Sp));
             }
 
             foreach (var (_, npc) in battle.Caught.Where(c => ReferenceEquals(c.Catcher, player)))
@@ -243,18 +267,48 @@ public sealed partial class BattleHandlers
                     session.Id, character.Name, caught.Name, caught.NpcId, slot, caught.Level, caught.MaxHp, caught.MaxSp);
             }
         }
-        if (ranAway is not null && session.ActiveCharacter is { } master)
+        foreach (var runaway in ranAway)
         {
-            Pets.Exile(session, master, ranAway, world, combat);
+            if (session.ActiveCharacter is not { } master)
+                break;
+            Pets.Exile(session, master, runaway, world, combat);
             logger.LogInformation(
                 "[{Session}] {Name}: pet {Pet} (amity {Amity}) runs away with {Gear} worn item(s)",
                 session.Id,
                 master.Name,
-                ranAway.Name,
-                ranAway.Amity,
-                ranAway.Equipment.Count);
+                runaway.Name,
+                runaway.Amity,
+                runaway.Equipment.Count);
         }
         if (alsoTell)
             logger.LogInformation("[{Session}] {Name} runs off; the others fight on", logSession.Id, player.Name);
+    }
+
+    /// <summary>Takes what a pet's fall in the battle costs: amity and experience, and rolls whether it runs away.</summary>
+    /// <param name="session">The owner's session.</param>
+    /// <param name="fallen">The pet that fell.</param>
+    /// <returns>True when the pet runs away from its owner.</returns>
+    private bool PetFalls(GameSession session, Data.Pet fallen)
+    {
+        var o = petOptions.Value;
+        if (o.PetDefeatAmityLoss > 0)
+        {
+            fallen.Amity = (byte)Math.Max(0, fallen.Amity - o.PetDefeatAmityLoss);
+            session.Send(PetMessages.SetAttribute(fallen.Slot, Action8.AttrAmity, fallen.Amity));
+            logger.LogInformation("[{Session}] pet {Pet} fell: amity {Amity}", session.Id, fallen.Name, fallen.Amity);
+        }
+        if (o.PetDefeatExpLossPercent > 0 && formulas.Table is { } f && session.ActiveCharacter is { } owner
+            && !EventArenas.IsArena(owner.MapId) && !TimedEffects.ExpProtected(owner, TimedEffects.Now))
+        {
+            var floor = f.TotalLevelExp(fallen.Level, fallen.Reborn);
+            var lost = Math.Clamp(f.LevelUpExp(fallen.Level, fallen.Reborn) * o.PetDefeatExpLossPercent / 100, 0, Math.Max(0, fallen.Exp - floor));
+            if (lost > 0)
+            {
+                fallen.Exp -= lost;
+                session.Send(PetMessages.SetAttribute(fallen.Slot, Action8.AttrExp, fallen.Exp));
+                logger.LogInformation("[{Session}] pet {Pet} fell: -{Exp} exp", session.Id, fallen.Name, lost);
+            }
+        }
+        return fallen.Amity < o.PetRunAwayAmity && GameRandom.Shared.Next(100) < o.PetRunAwayChancePercent;
     }
 }

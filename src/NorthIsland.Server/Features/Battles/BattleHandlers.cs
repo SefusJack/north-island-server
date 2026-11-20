@@ -95,8 +95,8 @@ public sealed partial class BattleHandlers(
         {
             2 when target is { Option1: 2 } => 1, // 1 target hasn't turned on PK mode
             4 when target is { Option2: 2 } => 2, // 2 hasn't turned on battle view
-            2 when target is not null && targetSession != session && target.MapId == character.MapId
-                && IsFree(session) && IsFree(targetSession!) && !targetSession!.Encounters.Immune(GameClock.UtcNow) => null, // fight (kind 2): free, same map
+            2 when target is not null && targetSession != session && target.MapId == character.MapId && !SameTeam(session, targetSession!)
+                && IsFree(session) && IsFree(targetSession!) && !targetSession!.Encounters.Immune(GameClock.UtcNow) => null, // fight (kind 2): free, same map, another team
             4 when target is not null && targetSession!.Battle is { Phase: not BattlePhase.Over } && session.Battle is null
                 && session.Watching is null && target.MapId == character.MapId => null, // watch (kind 4): target in a battle here
             5 when target is not null && targetSession != session && targetSession!.Battle is { Phase: not BattlePhase.Over }
@@ -166,14 +166,29 @@ public sealed partial class BattleHandlers(
         s.Battle is null && s.Watching is null && s.Event is null && !s.Stalls.Any && s.Trades.Pets is null
             && s.Activities.Fishing is null;
 
+    /// <summary>Tells whether two players are in the same team.</summary>
+    /// <param name="a">The session of one player.</param>
+    /// <param name="b">The session of the other player.</param>
+    /// <returns>True when both are in a team and it is the same one.</returns>
+    private bool SameTeam(GameSession a, GameSession b) =>
+        world.Teams.LeaderOf(a.Account!.LoginId) is var leader and not 0 && leader == world.Teams.LeaderOf(b.Account!.LoginId);
+
     /// <summary>Starts a fight between two players and plays its first round.</summary>
     /// <param name="attacker">The session of the player who challenges.</param>
     /// <param name="defender">The session of the player challenged; their team leader fights in their place when they are in a team.</param>
+    /// <remarks>The fight is refused when the defender's team leader is the attacker, who would then fight on both sides.</remarks>
     private void StartPk(GameSession attacker, GameSession defender)
     {
         if (world.Teams.LeaderOf(defender.Account!.LoginId) is var leaderId and not 0 && leaderId != defender.Account.LoginId
             && world.SessionOf(leaderId) is { } leader && IsFree(leader))
             defender = leader;
+        if (defender == attacker || SameTeam(attacker, defender))
+        {
+            attacker.Send(new PacketWriter(Action33.Code, Action33.Option1).U8(8).ToArray()); // target busy
+            logger.LogWarning("[{Session}] PK on {Defender}: refused (the attacker would fight in the defending team)", attacker.Id,
+                defender.ActiveCharacter?.Name);
+            return;
+        }
         var character = attacker.ActiveCharacter!;
         var battle = new Battle { EventBattleIndex = 0, IsPvp = true, Type = Action11.PkBattleType, Combat = combat };
         AddTeam(battle, attacker, side: 1);
@@ -265,7 +280,7 @@ public sealed partial class BattleHandlers(
         logger.LogInformation("[{Session}] {Name} watches the battle of {Leader}", session.Id, session.ActiveCharacter!.Name, battle.Player.Name);
     }
 
-    /// <summary>Lets a player join the fight another player is in, on that player's side.</summary>
+    /// <summary>Lets a player join the fight another player is in, on that player's side, while its players choose their commands.</summary>
     /// <param name="session">The session of the joining player.</param>
     /// <param name="target">The session of the player whose fight is joined.</param>
     private void JoinFight(GameSession session, GameSession target)
@@ -274,19 +289,25 @@ public sealed partial class BattleHandlers(
         var targetFighter = battle.Players.Find(p => ReferenceEquals(p.Session, target) && !p.Left);
         byte[] cols = [Battle.PlayerCol, .. Battle.MemberCols];
         Fighter joined;
+        Fighter? pet;
         lock (battle.Lock)
         {
-            if (battle.Phase == BattlePhase.Over || targetFighter is null
+            if (battle.Phase != BattlePhase.Command || targetFighter is null
                 || cols.Where(c => !battle.Players.Exists(p => p.Side == targetFighter.Side && p.Col == c && !p.Left)).ToList() is not [var col, ..])
             {
-                session.Send(new PacketWriter(Action11.Code, Action11.JoinBattle).U8(targetFighter is null ? (byte)4 : (byte)1).ToArray());
+                var why = targetFighter is null ? "the target left" : battle.Phase != BattlePhase.Command ? $"phase {battle.Phase}" : "no free place";
+                var reason = targetFighter is null || battle.Phase != BattlePhase.Command ? (byte)4 : (byte)1; // 4 the battle is over, 1 no place
+                session.Send(new PacketWriter(Action11.Code, Action11.JoinBattle).U8(reason).ToArray());
+                logger.LogInformation("[{Session}] join the battle of {Target}: refused ({Why})", session.Id, target.ActiveCharacter?.Name, why);
                 return;
             }
             joined = battle.AddPlayer(session.ActiveCharacter!, session.Account!.LoginId, session, col, id => npcs[id], id => items[id], targetFighter.Side);
             joined.Joined = true;
+            joined.JoinedRound = battle.Round; // the joiner acts from the next round
+            pet = battle.PetOf(joined);
+            pet?.JoinedRound = battle.Round;
             session.Battle = battle;
         }
-        var pet = battle.PetOf(joined);
         Fighter[] newcomers = pet is null ? [joined] : [joined, pet];
         battle.Send(client => BattleMessages.Join(newcomers.Select(f => f.ToRecord(own: false)), client), except: session);
         session.Send(BattleMessages.FightStart(battle.Background, (byte)Math.Clamp(battle.EventBattleIndex, 0, 255),
@@ -294,9 +315,6 @@ public sealed partial class BattleHandlers(
         session.Send(BattleMessages.BattleType(battle.Type));
         SendWeaponLooks(session, battle);
         HideJoiner(session, battle);
-        joined.JoinedRound = battle.Round;
-        if (pet is not null)
-            pet.JoinedRound = battle.Round;
         logger.LogInformation("[{Session}] {Name} joins the battle of {Target} at ({Row},{Col})", session.Id, joined.Name,
             target.ActiveCharacter?.Name, joined.Row, joined.Col);
     }
@@ -355,12 +373,17 @@ public sealed partial class BattleHandlers(
         session.Send(new PacketWriter(Action11.Code, Action11.PlayerLeft).I32(session.Account!.LoginId).U16(0).ToArray());
     }
 
-    /// <summary>Ends a fight between players: records the winners' PK wins and ranks, then ends the battle.</summary>
+    /// <summary>
+    /// Ends a fight between players: records the winners' PK wins and ranks, then ends the battle; nothing happens when the battle is
+    /// already over, so the wins are recorded once.
+    /// </summary>
     /// <param name="session">The session the end is reported for.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="winner">The winning side.</param>
     private void EndPvp(GameSession session, Battle battle, byte winner)
     {
+        if (!TryClaimEnd(battle))
+            return;
         var winners = string.Join(", ", battle.Players.Where(p => p.Side == winner).Select(p => p.Name));
         foreach (var p in battle.Players.Where(p => p.Side == winner))
         {
@@ -374,7 +397,7 @@ public sealed partial class BattleHandlers(
             }
         }
         UpdatePvpRanks();
-        End(session, battle, BattleOutcome.Won, $"PK won by {winners}");
+        Close(session, battle, BattleOutcome.Won, $"PK won by {winners}");
     }
 
     /// <summary>Gives the top three PK winners rank 1 to 3 and tells everyone online whose rank changed.</summary>
@@ -572,13 +595,14 @@ public sealed partial class BattleHandlers(
         run.PendingBattle = null;
 
         var sourceRole = run.Trigger is >= 1 and <= 3 ? (ushort)run.Index : (ushort)0;
-        var source = maps.Scene(character.MapId)?.Battles.FirstOrDefault(b => b.Index == index);
+        var eventMap = (ushort)run.MapId; // the battle is one of the map whose event is waiting for it, wherever the player stands now
+        var source = maps.Scene(eventMap)?.Battles.FirstOrDefault(b => b.Index == index);
         var battle = source is null
             ? null
-            : Battle.Create(character, session.Account!.LoginId, source, id => npcs[id], sourceRole, session, id => items[id], combat);
+            : Battle.Create(character, session.Account!.LoginId, source, eventMap, id => npcs[id], sourceRole, session, id => items[id], combat);
         if (battle is null || battle.Monsters.Count == 0)
         {
-            logger.LogWarning("[{Session}] battle {Index} of map {Map} has no monsters", session.Id, index, character.MapId);
+            logger.LogWarning("[{Session}] battle {Index} of map {Map} has no monsters", session.Id, index, eventMap);
             run.BattleOutcome = BattleOutcome.Lost;
             session.Send(EventMessages.StopWaiting());
             return ValueTask.CompletedTask;
@@ -589,8 +613,7 @@ public sealed partial class BattleHandlers(
         {
             if (col >= Battle.MemberCols.Length)
                 break;
-            if (world.SessionOf(memberId) is not { } member || member.ActiveCharacter is not { } mc || mc.MapId != character.MapId
-                || member.Battle is not null || member.Event is not null)
+            if (world.SessionOf(memberId) is not { } member || member.ActiveCharacter is not { } mc || mc.MapId != character.MapId || !IsFree(member))
                 continue;
             battle.AddPlayer(mc, memberId, member, Battle.MemberCols[col++], id => npcs[id], id => items[id]);
             member.Battle = battle;
@@ -603,7 +626,7 @@ public sealed partial class BattleHandlers(
         HideMonsterWhileFighting(battle);
         session.Send(EventMessages.StopWaiting());
         logger.LogInformation("[{Session}] {Names} fight battle {Index} of map {Map}: {Monsters}", session.Id,
-            string.Join(", ", battle.Players.Select(p => p.Name)), index, character.MapId,
+            string.Join(", ", battle.Players.Select(p => p.Name)), index, eventMap,
             string.Join(", ", battle.Monsters.Select(m => $"{m.Name} (lv {m.Level}, {m.Hp} HP) at ({m.Row},{m.Col})")));
         StartRound(session, battle);
         return ValueTask.CompletedTask;

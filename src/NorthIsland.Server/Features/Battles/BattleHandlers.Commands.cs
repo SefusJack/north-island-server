@@ -24,10 +24,27 @@ public sealed partial class BattleHandlers
         lock (battle.Lock)
         {
             if (battle.Phase != BattlePhase.Command || battle.OwnAt(command.ActorRow, command.ActorCol) is not { IsAlive: true } actor
-                || !ReferenceEquals(actor.Session, session) || actor.SummonedRound == battle.Round || !battle.Commands.TryAdd(actor, command))
+                || !ReferenceEquals(actor.Session, session) || actor.SummonedRound == battle.Round || battle.Commands.ContainsKey(actor))
                 return ValueTask.CompletedTask;
-            if (!isItem && (SkillTable.IsNormalAttack(command.SkillOrItem) || IsPetNormalAttack(actor, command.SkillOrItem)))
-                actor.NormalAttackId = command.SkillOrItem; // the weapon's attack the client chose, used for this fighter's counters
+            if (!isItem && actor.Kind == 2 && SkillTable.IsNormalAttack(command.SkillOrItem)) // player
+            {
+                // the player's weapon decides the attack, not the id the client sent
+                if (actor.NormalAttackId == 0)
+                {
+                    logger.LogWarning("[{Session}] round {Round}: {Actor} sends normal attack {Id}, but the worn weapon has none", session.Id,
+                        battle.Round, actor.Name, command.SkillOrItem);
+                    return ValueTask.CompletedTask;
+                }
+                if (command.SkillOrItem != actor.NormalAttackId)
+                {
+                    logger.LogWarning("[{Session}] round {Round}: {Actor} sends normal attack {Id}; the worn weapon's is {Weapon}", session.Id,
+                        battle.Round, actor.Name, command.SkillOrItem, actor.NormalAttackId);
+                    command = command with { SkillOrItem = actor.NormalAttackId };
+                }
+            }
+            else if (!isItem && IsPetNormalAttack(actor, command.SkillOrItem))
+                actor.NormalAttackId = command.SkillOrItem; // the pet's attack the client chose, used for this pet's counters
+            battle.Commands.Add(actor, command);
             logger.LogInformation("[{Session}] round {Round}: {Actor} ({Row},{Col}) uses {What} {Id} on ({TargetRow},{TargetCol})", session.Id,
                 battle.Round,
                 actor.Name,

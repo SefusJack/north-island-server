@@ -26,6 +26,8 @@ public sealed partial class BattleHandlers
             }
             foreach (var own in battle.OwnSide)
                 own.Defending = commands.TryGetValue(own, out var c) && c is { IsItem: false, SkillOrItem: SkillTable.Defense };
+            foreach (var chose in commands.Keys)
+                chose.Acted = true; // a fighter whose command is played has taken part in the battle
             var order = BattleFormulas.TurnOrder(battle.All);
             HashSet<Fighter> inCombo = [];
             Dictionary<Fighter, MonsterPlan> monsterPlans = [];

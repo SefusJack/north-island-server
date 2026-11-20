@@ -132,12 +132,17 @@ public sealed partial class BattleHandlers
         return thrown;
     }
 
-    /// <summary>Settles a won battle: pays experience to the players and their pets, ends the battle, then gives the rewards.</summary>
+    /// <summary>
+    /// Settles a won battle: pays experience to the players and their pets, ends the battle, then gives the rewards; nothing happens when the
+    /// battle is already over, so two ends at nearly the same time pay once.
+    /// </summary>
     /// <param name="session">The session used for logging and for ending the battle.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="winPlate">The fighter who used the Win Plate, or null.</param>
     private void Win(GameSession session, Battle battle, Fighter? winPlate = null)
     {
+        if (!TryClaimEnd(battle))
+            return;
         var defeated = battle.Standalone ? []
             : battle.Monsters.Where(m => m.Npc is not null && !m.Captured).Select(m => m.Npc!).ToList();
         var o = options.Value;
@@ -169,8 +174,10 @@ public sealed partial class BattleHandlers
                         o.ExpMultiplierCap).Potion
                 : exp;
             own += DamageBurst(playerFighter, character.Level);
-            // On the Training Island every living winner gets the flat amount on top, which events and potions do not raise
-            var flat = TrainingFlatExp(character, defeated);
+            // On the Training Island every living winner who acted in the battle gets the flat amount on top, which events and potions do
+            // not raise; a pet gets it when it acted too
+            var islandFlat = TrainingFlatExp(character, defeated);
+            var flat = playerFighter is { Acted: true } ? islandFlat : 0;
 
             (Data.Pet Pet, int Exp)? earns = null;
             var buffShareBase = 0;
@@ -185,7 +192,8 @@ public sealed partial class BattleHandlers
                 var petBurst = DamageBurst(petFighter, pet.Level);
                 buffShareBase = petShare + petBurst;
                 // The pet gets the Training Island's flat amount on top as its owner does.
-                if ((int)Math.Min(int.MaxValue, Math.Round(petShare * petPotion)) + petBurst + flat is var petExp and > 0)
+                var petFlat = petFighter.Acted ? islandFlat : 0;
+                if ((int)Math.Min(int.MaxValue, Math.Round(petShare * petPotion)) + petBurst + petFlat is var petExp and > 0)
                     earns = (pet, petExp);
             }
             if (earns is not null && playerFighter is { BuffedPet: true })
@@ -209,7 +217,7 @@ public sealed partial class BattleHandlers
             }
         }
 
-        End(session, battle, BattleOutcome.Won, "won");
+        Close(session, battle, BattleOutcome.Won, "won");
         foreach (var winner in winners.Where(_ => !battle.Standalone))
             instances.RecordWin(winner);
         foreach (var (owner, pet, petExp) in earningPets)
@@ -310,7 +318,7 @@ public sealed partial class BattleHandlers
         return monster.DropItem;
     }
 
-    /// <summary>The experience a win on the Training Island or in one of its areas adds for a living winner.</summary>
+    /// <summary>The experience a win on the Training Island or in one of its areas adds for a living winner who acted in the battle.</summary>
     /// <param name="character">The winner's character.</param>
     /// <param name="defeated">The records of the defeated monsters.</param>
     /// <returns>The flat experience, or 0 when it does not apply.</returns>
@@ -362,14 +370,19 @@ public sealed partial class BattleHandlers
             exp, character.Exp, gold, dropped.Count > 0 ? ", drops: " + string.Join(", ", dropped) : "");
     }
 
-    /// <summary>Settles a lost battle: ends it and sends players back who were sent back or who lost in an arena.</summary>
+    /// <summary>
+    /// Settles a lost battle: ends it and sends players back who were sent back or who lost in an arena; nothing happens when the battle is
+    /// already over.
+    /// </summary>
     /// <param name="session">The session used for logging and for ending the battle.</param>
     /// <param name="battle">The battle.</param>
     private void Lose(GameSession session, Battle battle)
     {
+        if (!TryClaimEnd(battle))
+            return;
         var losers = battle.ActivePlayers.Where(p => p.Session?.ActiveCharacter is not null).ToList();
 
-        End(session, battle, BattleOutcome.Lost, "defeated");
+        Close(session, battle, BattleOutcome.Lost, "defeated");
         foreach (var loser in losers)
         {
             var s = loser.Session!;
@@ -396,17 +409,17 @@ public sealed partial class BattleHandlers
     /// <summary>The item id of the Toy Puppet.</summary>
     public const ushort ToyPuppet = 34071; // Toy Puppet
 
-    /// <summary>Uses up a Toy Puppet when a player or their pet ends the battle down, so the losses are not taken.</summary>
+    /// <summary>Uses up a Toy Puppet when a player ends the battle down or one of their pets fell in it, so the losses are not taken.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="player">The player fighter.</param>
-    /// <param name="pet">The player's pet fighter, or null.</param>
+    /// <param name="fallenPets">The player's pet fighters that fell in the battle.</param>
     /// <returns>True when a puppet was used up.</returns>
-    private bool UseToyPuppet(GameSession session, Fighter player, Fighter? pet)
+    private bool UseToyPuppet(GameSession session, Fighter player, List<Fighter> fallenPets)
     {
         if (session.ActiveCharacter is not { } character || EventArenas.IsArena(character.MapId))
             return false;
-        var fallenPet = pet is { IsAlive: false, OwnedPet: { LeaseUntil: null } p } ? p : null;
-        if (fallenPet is null && (player.IsAlive || TimedEffects.ExpProtected(character, TimedEffects.Now)))
+        List<Data.Pet> owned = [.. fallenPets.Select(f => f.OwnedPet).OfType<Data.Pet>().Where(p => p.LeaseUntil is null)];
+        if (owned.Count == 0 && (player.IsAlive || TimedEffects.ExpProtected(character, TimedEffects.Now)))
             return false;
         if (character.Equipment.Find(e => e.ItemId == ToyPuppet) is { } worn)
         {
@@ -415,8 +428,9 @@ public sealed partial class BattleHandlers
             session.Send(ItemMessages.EquipSlotCleared(worn.Slot));
             world.Broadcast(session, ItemMessages.PlayerEquipChange(session.Account!.LoginId, worn.ItemId, on: false), sameMapOnly: false);
         }
-        else if (fallenPet?.Equipment.Find(e => e.ItemId == ToyPuppet) is { } petWorn)
+        else if (owned.Find(p => p.Equipment.Exists(e => e.ItemId == ToyPuppet)) is { } fallenPet)
         {
+            var petWorn = fallenPet.Equipment.Find(e => e.ItemId == ToyPuppet)!;
             fallenPet.Equipment.Remove(petWorn);
             session.Send(PetMessages.EquipCleared(fallenPet.Slot, petWorn.Slot));
         }
