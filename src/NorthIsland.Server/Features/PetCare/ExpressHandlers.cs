@@ -107,10 +107,12 @@ public sealed class ExpressHandlers(
     /// </returns>
     private (byte Code, ushort Item)? Check(GameSession session, Character c, int targetId, List<(byte Slot, byte Count)> stacks)
     {
+        if (stacks.Select(s => s.Slot).Distinct().Count() != stacks.Count) // each bag slot at most once: two lines of one stack would send it twice
+            return (1, 0);
         foreach (var (slot, count) in stacks)
         {
             var stack = c.Bag.Find(b => b.Slot == slot);
-            if (stack is null || count == 0 || stack.Count < count || Bag.IsNoTrade(items, stack))
+            if (stack is null || count == 0 || stack.Count < count || Bag.IsNoTrade(items, stack) || session.Vehicle?.BagSlot == slot)
                 return (1, stack?.ItemId ?? 0);
         }
         if (world.SessionOf(targetId) is not { } target || target.ActiveCharacter is not { } tc || targetId == session.Account!.LoginId)

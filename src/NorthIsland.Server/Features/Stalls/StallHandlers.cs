@@ -97,7 +97,8 @@ public sealed class StallHandlers(
         List<(byte Slot, byte Count, ushort ItemId)> wanted = [];
         for (var at = 4; at + 8 <= body.Length; at += 8)
             wanted.Add((body.Span[at], body.Span[at + 1], BinaryPrimitives.ReadUInt16LittleEndian(body.Span[(at + 2)..]))); // 1 Count, 2 ItemId
-        if (wanted.Count == 0 || world.SessionOf(ownerId) is not { } owner || ReferenceEquals(owner, session)
+        if (wanted.Count == 0 || wanted.Select(w => w.Slot).Distinct().Count() != wanted.Count // each stall slot at most once: two lines of one stack would sell it twice
+            || world.SessionOf(ownerId) is not { } owner || ReferenceEquals(owner, session)
             || owner.Stalls.Items is not { } stall || owner.ActiveCharacter is not { } seller)
             return ValueTask.CompletedTask;
 
