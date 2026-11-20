@@ -461,7 +461,7 @@ out of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common | 4 foods, Wishing Coins or Bamboo Dragonflies (1060 each, 42.4%); 6 uncommons such as fireworks, scrolls, amity jellies, Pet Lethe Scrolls, Delay Clocks, Alchemy Book 2 (550 each, 33%); 5 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, GPS, spars, Alchemy Books 3 and 4 (300 each, 15%); the event's big bag (50, 0.5%); one jackpot (15, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
+| Common | 4 foods, Wishing Coins or Bamboo Dragonflies (1060 each, 42.4%); 6 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks, Alchemy Books 1 and 2 (550 each, 33%); 5 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, Pet Lethe Scrolls, door vouchers, GPS, spars, Alchemy Books 3 and 4 (300 each, 15%); the event's big bag (50, 0.5%); one jackpot (15, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
 | Big | 7 themed rares (95 each, 66.5%) and a Silver Card (35, 3.5%); 4 themed jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Yacht, Bomb Diamonds, Potential Pill (60 each, 24%) and a Golden Card (20, 2%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar (17 each, 3.4%) and a Free Card (6, 0.6%) |
 
 The four choice cards (gift cards, `Data/GiftCards.tsv`) are exchanged for any one prize of their tier from every event,
@@ -472,7 +472,7 @@ the big bags. Holiday items fill only their own event's bags.
 
 | Card | Choose one of |
 |---|---|
-| Bronze Card (50017) | the 57 uncommons, the Escape Button and the four bottle potions |
+| Bronze Card (50017) | the 57 uncommons, Alchemy Book 1, the Escape Button and the four bottle potions |
 | Silver Card (50018) | the 81 rares |
 | Golden Card (50019) | the 22 jackpots |
 | Free Card (50000) | the 12 top prizes |
