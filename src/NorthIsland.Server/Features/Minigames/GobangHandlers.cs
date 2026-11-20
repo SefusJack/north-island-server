@@ -7,7 +7,9 @@ using NorthIsland.Protocol.Opcodes;
 
 namespace NorthIsland.Server.Features.Minigames;
 
-/// <summary>Runs Five in a Row in houses: the hall, the 16 tables, the moves and the ante payout.</summary>
+/// <summary>
+/// Runs Five in a Row in houses: the hall, the 16 tables, the moves, and the antes held while a game is played and paid out at its end.
+/// </summary>
 /// <param name="world">The world state, for sessions and the leave events.</param>
 /// <param name="tents">The house handlers, for house maps and their furniture.</param>
 /// <param name="logger">The logger.</param>
@@ -45,6 +47,12 @@ public sealed class GobangHandlers(
 
         /// <summary>The board cells, row by row (<c>x * Size + y</c>); 0 is empty, otherwise the side that played there.</summary>
         public readonly byte[] Board = new byte[Size * Size];
+
+        /// <summary>The characters whose ante is held for the game being played, by seat; null for a seat that put in nothing.</summary>
+        public readonly Character?[] Stakers = new Character?[2];
+
+        /// <summary>The gold in gold coins each staker put in for the game being played; 0 when nothing is held.</summary>
+        public int Stake;
 
         /// <summary>Whether no one sits at the table.</summary>
         public bool Empty => Seat[0] == 0 && Seat[1] == 0;
@@ -167,7 +175,7 @@ public sealed class GobangHandlers(
                     Sit(session, c, id, span[1], span[2]);
                     break;
                 case Action57.GobangStart: // 57/11/4: start the game at their table
-                    Start(c, id);
+                    Start(session, c, id);
                     break;
                 case Action57.GobangMove when span.Length >= 2: // 57/11/5: place a stone on a board cell
                     Move(c, id, span[1]);
@@ -256,21 +264,38 @@ public sealed class GobangHandlers(
         logger.LogInformation("[{Session}] {Name} sits at five-in-a-row table {Table} seat {Seat}", session.Id, c.Name, index, free + 1);
     }
 
-    /// <summary>Starts the game at the player's table when both seats are taken and both players can afford the ante.</summary>
+    /// <summary>
+    /// Starts the game at the player's table when both seats are taken by players who can pay the ante, and takes the ante from both: it is
+    /// held until the game ends, so neither can throw or bank the gold they might lose.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
     /// <param name="c">The player's character.</param>
     /// <param name="id">The player's login id.</param>
-    private void Start(Character c, int id)
+    private void Start(GameSession session, Character c, int id)
     {
         var (hall, table, index, _) = Find(c, id);
         if (hall is null || table is null || table.Playing || table.Seat[0] == 0 || table.Seat[1] == 0)
             return;
-        var gold = table.Seat.Select(s => world.SessionOf(s) is { } o ? o.ActiveCharacter?.Gold ?? -1 : -1).ToArray();
-        if (gold.Any(g => g < Antes[table.Ante]))
+        var amount = Antes[table.Ante];
+        var players = table.Seat.Select(s => world.SessionOf(s) is { ActiveCharacter: { } pc } o ? (Session: o, Character: pc) : default).ToArray();
+        if (players.Any(p => p.Character is null || p.Character.Gold < amount))
+        {
+            logger.LogWarning("[{Session}] {Name}: five in a row start at table {Table}, but a player cannot pay the ante of {Ante}", session.Id,
+                c.Name, index, amount);
             return;
+        }
         table.Reset();
         table.Playing = true;
+        table.Stake = amount;
+        for (var s = 0; s < 2 && amount > 0; s++)
+        {
+            var (o, pc) = players[s];
+            pc.Gold -= amount;
+            table.Stakers[s] = pc;
+            o.Send(PlayerMessages.Money(pc.Gold));
+        }
         ToHall(hall, Packet(Action57.GobangStarted, w => w.U8((byte)index)));
-        logger.LogInformation("Five in a row starts at table {Table} (ante {Ante})", index, Antes[table.Ante]);
+        logger.LogInformation("Five in a row starts at table {Table} (ante {Ante} held from each player)", index, amount);
     }
 
     /// <summary>Places a stone for the player when it is their turn, and ends the game on five in a row or a full board.</summary>
@@ -326,7 +351,7 @@ public sealed class GobangHandlers(
         return null;
     }
 
-    /// <summary>Ends the game: tells the seated players the result and moves the ante from the loser to the winner.</summary>
+    /// <summary>Ends the game: tells the seated players the result and pays out the antes held for it.</summary>
     /// <param name="table">The table.</param>
     /// <param name="winner">The winning side, 1 or 2; 0 for a draw.</param>
     /// <param name="five">The five winning cells; zeros when there are none.</param>
@@ -337,19 +362,52 @@ public sealed class GobangHandlers(
         table.Over = true;
         foreach (var s in table.Seat.Where(s => s != leaver))
             Send(s, Packet(Action57.GobangPlay, w => { w.U8(2).U8(winner); foreach (var cell in five) w.U8(cell); }));
-        if (winner == 0 || Antes[table.Ante] == 0)
+        Settle(table, winner);
+    }
+
+    /// <summary>
+    /// Pays out the antes held for the game at a table: the winner gets both, up to the most gold a player can hold; on a draw, or when the
+    /// winner put in nothing, each staker gets their own ante back. Clears what the table holds.
+    /// </summary>
+    /// <param name="table">The table, whose seats still name the two players.</param>
+    /// <param name="winner">The winning side, 1 or 2; 0 for a draw.</param>
+    private void Settle(Table table, byte winner)
+    {
+        var (stake, stakers) = (table.Stake, table.Stakers.ToArray());
+        table.Stake = 0;
+        Array.Clear(table.Stakers);
+        if (stake == 0)
             return;
-        var amount = Antes[table.Ante];
-        if (world.SessionOf(table.Seat[winner - 1]) is { } win && world.SessionOf(table.Seat[2 - winner]) is { } lose
-            && win.ActiveCharacter is { } wc && lose.ActiveCharacter is { } lc)
+        if (winner != 0 && stakers[winner - 1] is { } wc)
         {
-            var paid = Math.Min(amount, Math.Min(lc.Gold, MaxGold - wc.Gold));
-            lc.Gold -= paid;
-            wc.Gold += paid;
-            lose.Send(PlayerMessages.Money(lc.Gold));
-            win.Send(PlayerMessages.Money(wc.Gold));
-            logger.LogInformation("{Winner} wins {Amount} gold at five in a row from {Loser}", wc.Name, paid, lc.Name);
+            var pot = stake * stakers.Count(s => s is not null);
+            var paid = Pay(table.Seat[winner - 1], wc, pot);
+            logger.LogInformation("{Winner} wins {Paid} of {Pot} gold held at five in a row from {Loser}", wc.Name, paid, pot,
+                stakers[2 - winner]?.Name);
+            return;
         }
+        for (var s = 0; s < 2; s++)
+        {
+            if (stakers[s] is { } sc)
+                logger.LogInformation("{Name} gets {Paid} of the {Stake} gold ante back from five in a row", sc.Name, Pay(table.Seat[s], sc, stake),
+                    stake);
+        }
+    }
+
+    /// <summary>
+    /// Adds gold to a character, up to the most a player can hold, and sends the new amount when they are online with that character.
+    /// </summary>
+    /// <param name="id">The player's login id.</param>
+    /// <param name="c">The character that gets the gold.</param>
+    /// <param name="amount">The gold to add.</param>
+    /// <returns>The gold actually added.</returns>
+    private int Pay(int id, Character c, int amount)
+    {
+        var paid = Math.Max(0, Math.Min(amount, MaxGold - c.Gold));
+        c.Gold += paid;
+        if (world.SessionOf(id) is { } s && ReferenceEquals(s.ActiveCharacter, c))
+            s.Send(PlayerMessages.Money(c.Gold));
+        return paid;
     }
 
     /// <summary>Takes the player out of their seat, which loses a game in progress, and out of the hall when they quit.</summary>
