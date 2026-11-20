@@ -182,6 +182,11 @@ public sealed class ManufactureHandlers(
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>Returns whether the item is a Magic Sandglass, whose uses are counted on the placed piece.</summary>
+    /// <param name="itemId">The item id of a furniture piece.</param>
+    /// <returns>True for both Magic Sandglass items.</returns>
+    public static bool IsSandglass(ushort itemId) => itemId is 39074 or 39097; // 39074 Magic Sandglass, 39097 Magic Sandglass
+
     /// <summary>Returns the percent by which the placed furniture shortens manufacture times; each kind of furniture counts once.</summary>
     /// <param name="furniture">The item ids of the furniture placed in the house.</param>
     /// <returns>The total bonus in percent.</returns>
@@ -270,7 +275,7 @@ public sealed class ManufactureHandlers(
     {
         if (InOwnHouse(session) is not { } character || body.Length < 2)
             return ValueTask.CompletedTask;
-        var piece = character.Furniture.Find(f => f.Index == body.Span[1] && f.ItemId is 39074 or 39097); // 39074 Magic Sandglass, 39097 Magic Sandglass
+        var piece = character.Furniture.Find(f => f.Index == body.Span[1] && IsSandglass(f.ItemId));
         if (piece is null || character.SandglassArmed || piece.Uses >= options.Value.HouseLife.SandglassUses)
         {
             logger.LogInformation(
@@ -329,8 +334,9 @@ public sealed class ManufactureHandlers(
     }
 
     /// <summary>
-    /// Handles <c>64/2</c>, which continues the job in a slot: a job that has not started yet is started (with the pet the packet names, if any),
-    /// and its delivery is scheduled. A slot without a job is logged and answered with the pet-left packet.
+    /// Handles <c>64/2</c>, which continues the job in a slot: a paused job is started (with the pet the packet names, if any) and its delivery is
+    /// scheduled. A job that is already running has its delivery scheduled already and is left as it is, so repeated requests cannot stack
+    /// delivery timers. A slot without a job is logged and answered with the pet-left packet.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -348,20 +354,22 @@ public sealed class ManufactureHandlers(
         if (r.Remaining >= 2)
             r.Bytes(2);
         var (petSlot, petId) = ReadPet(ref r);
-        if (job.StartedUtc is null)
+        if (job.StartedUtc is not null)
         {
-            if (petSlot != 0 && PetRefusal(session, character, petSlot, petId) is { } why)
-            {
-                logger.LogWarning("[{Session}] {Name}: continue manufacture with pet {Pet}: {Why}", session.Id, character.Name, petId, why);
-                session.Send(HouseMessages.PetLeft());
-                return ValueTask.CompletedTask;
-            }
-            (job.PetSlot, job.PetId) = (petSlot, petSlot != 0 ? petId : 0);
-            job.StartedUtc = GameClock.UtcNow;
-            session.Send(HouseMessages.MakeJobs([RecordOf(job, GameClock.UtcNow)]));
-            session.Send(HouseMessages.MakeState(Action64.Start, job.Slot));
-            SendPetMaker(session, job);
+            logger.LogInformation("[{Session}] {Name}: continue manufacture: the job in slot {Slot} is already running", session.Id, character.Name, job.Slot);
+            return ValueTask.CompletedTask;
         }
+        if (petSlot != 0 && PetRefusal(session, character, petSlot, petId) is { } why)
+        {
+            logger.LogWarning("[{Session}] {Name}: continue manufacture with pet {Pet}: {Why}", session.Id, character.Name, petId, why);
+            session.Send(HouseMessages.PetLeft());
+            return ValueTask.CompletedTask;
+        }
+        (job.PetSlot, job.PetId) = (petSlot, petSlot != 0 ? petId : 0);
+        job.StartedUtc = GameClock.UtcNow;
+        session.Send(HouseMessages.MakeJobs([RecordOf(job, GameClock.UtcNow)]));
+        session.Send(HouseMessages.MakeState(Action64.Start, job.Slot));
+        SendPetMaker(session, job);
         Schedule(session, job);
         return ValueTask.CompletedTask;
     }
@@ -404,7 +412,7 @@ public sealed class ManufactureHandlers(
         if (owner != session || session.ActiveCharacter is not { } character)
             return;
         var now = GameClock.UtcNow;
-        foreach (var piece in character.Furniture.Where(f => f.ItemId is 39074 or 39097 && f.Uses > 0)) // 39074 Magic Sandglass, 39097 Magic Sandglass
+        foreach (var piece in character.Furniture.Where(f => IsSandglass(f.ItemId) && f.Uses > 0))
             session.Send(HouseLifeMessages.SandglassUsed((byte)piece.Index, SandglassValue(piece)));
         if (SandglassFlags(character) != 0)
             SendSandglassFlags(session, character);
@@ -451,14 +459,20 @@ public sealed class ManufactureHandlers(
     }
 
     /// <summary>
-    /// Finishes a job: puts the products into the bag and removes the job. When the bag cannot hold them the job stays, fully elapsed and paused,
-    /// and the client is told the bag is full.
+    /// Finishes a job: removes the job first, so it is claimed once, then puts the products into the bag. A job that is no longer listed (delivered
+    /// already) is logged and skipped. When the bag cannot hold the products the job stays, fully elapsed and paused, and the client is told the
+    /// bag is full.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="job">The job to deliver.</param>
     private void Deliver(GameSession session, MakeJob job)
     {
         var character = session.ActiveCharacter!;
+        if (!character.MakeJobs.Contains(job))
+        {
+            logger.LogWarning("[{Session}] {Name}: {Product} in slot {Slot} was delivered already", session.Id, character.Name, NameOf(job.Product), job.Slot);
+            return;
+        }
         if (job.PetId != 0 && !character.Pets.Exists(p => p.NpcId == job.PetId))
         {
             (job.PetSlot, job.PetId) = (0, 0);
@@ -478,9 +492,9 @@ public sealed class ManufactureHandlers(
             logger.LogInformation("[{Session}] {Name}: {Product} x{Count} made, but the bag is full", session.Id, character.Name, NameOf(job.Product), count);
             return;
         }
+        character.MakeJobs.Remove(job);
         foreach (var (stack, added) in Bag.Add(character, items, job.Product, count))
             session.Send(ItemMessages.BagAdd(new BagEntry { Slot = stack.Slot, ItemId = stack.ItemId, Count = added, Wear = stack.Wear }));
-        character.MakeJobs.Remove(job);
         session.Send(HouseMessages.MakeState(Action64.Finish, job.Slot));
         if (job.Sandglass)
             SendSandglassFlags(session, character);
