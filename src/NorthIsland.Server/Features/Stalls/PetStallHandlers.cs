@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using Microsoft.Extensions.Logging;
-using NorthIsland.Protocol;
 using NorthIsland.Protocol.IO;
 using NorthIsland.Protocol.Messages.Items;
 using NorthIsland.Protocol.Messages.Player;
@@ -9,13 +8,38 @@ namespace NorthIsland.Server.Features.Stalls;
 
 /// <summary>Handles pet stalls: opening, closing, browsing and buying.</summary>
 /// <param name="world">World state.</param>
+/// <param name="npcs">NPC data, for the kind of each pet.</param>
+/// <param name="items">Item data, for the gear the pets wear.</param>
 /// <param name="logger">Logger.</param>
 public sealed class PetStallHandlers(
     WorldState world,
+    NpcData npcs,
+    ItemData items,
     ILogger<PetStallHandlers> logger)
 {
     /// <summary>Most pets one stall can offer.</summary>
     public const int MaxPets = 3;
+
+    /// <summary>NPC type of a reborn pet, which the client's pet trade never lets go to another player.</summary>
+    private const byte RebornType = 32; // npc type 32: reborn pet
+
+    /// <summary>
+    /// Tells why a pet of the seller cannot be sold, by the rules of the client's pet trade and pet stall: not tradable, no amity, a grow or reborn
+    /// kind, ridden, the fighting pet, offered in a pet trade, or wearing gear that cannot be traded.
+    /// </summary>
+    /// <param name="session">The seller's session.</param>
+    /// <param name="seller">The seller's character.</param>
+    /// <param name="pet">The pet.</param>
+    /// <returns>The reason, for the log, or null when the pet can be sold.</returns>
+    private string? Unsellable(GameSession session, Character seller, Pet pet) =>
+        pet.Tradable == 0 ? "cannot be traded"
+            : pet.Amity == 0 ? "has no amity"
+                : npcs[pet.NpcId] is { } npc && (npc.GrowKey != 0 || npc.Type == RebornType) ? "is a kind that cannot be sold"
+                    : session.RidingPetSlot == pet.Slot ? "is ridden"
+                        : seller.ActivePetId == pet.NpcId ? "is the fighting pet"
+                            : session.Trades.Pets is { } trade && ReferenceEquals(trade.Of(session).Pet, pet) ? "is offered in a pet trade"
+                                : pet.Equipment.Exists(e => items[e.ItemId] is { } r && (r.Flags & Bag.NoTradeFlag) != 0) ? "wears gear that cannot be traded"
+                                    : null;
 
     /// <summary>Closes the player's pet stall and tells them and the map; nothing happens when none is open.</summary>
     /// <param name="session">The owner's session.</param>
@@ -42,8 +66,15 @@ public sealed class PetStallHandlers(
         while (r.Remaining >= 5 && stall.Prices.Count < MaxPets)
         {
             var (slot, price) = (r.U8(), r.I32());
-            if (price > 0 && character.Pets.Exists(p => p.Slot == slot) && session.RidingPetSlot != slot)
-                stall.Prices[slot] = price;
+            if (price <= 0 || character.Pets.Find(p => p.Slot == slot) is not { } pet)
+                continue;
+            if (Unsellable(session, character, pet) is { } why)
+            {
+                logger.LogWarning("[{Session}] {Name}: pet {Pet} left out of the pet stall: {Why}", session.Id, character.Name, pet.Name, why);
+                continue;
+            }
+            stall.Prices[slot] = price;
+            stall.Offered[slot] = pet;
         }
         if (stall.Prices.Count == 0 || stall.Name.Length == 0)
         {
@@ -75,16 +106,21 @@ public sealed class PetStallHandlers(
         if (InWorld(session) is null || body.Length < 4)
             return ValueTask.CompletedTask;
         var ownerId = BinaryPrimitives.ReadInt32LittleEndian(body.Span);
-        if (world.SessionOf(ownerId) is not { } owner || owner.Stalls.Pets is not { } stall || owner.ActiveCharacter is not { } seller)
+        if (world.SessionOf(ownerId) is not { } owner || owner.Stalls.Pets is not { } stall || owner.ActiveCharacter is not { } seller
+            || seller.MapId != session.ActiveCharacter!.MapId)
         {
             session.Send(StallMessages.PetStallClosed(ownerId));
             return ValueTask.CompletedTask;
         }
-        session.Send(Offer(ownerId, stall, seller, session.Client));
+        lock (stall)
+            Show(session, ownerId, stall, owner, seller);
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Buys pets from a stall: checks gold, room and duplicate kinds, then moves the pets and the gold.</summary>
+    /// <summary>
+    /// Buys pets from a stall on the buyer's map: checks each pet is still the one the stall opened with, can still be sold and is at the price
+    /// the buyer was shown, then gold, room and duplicate kinds, then moves the pets and the gold.
+    /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The packet body: the owner's login id, then the pet slots.</param>
     internal ValueTask OnBuy(GameSession session, ReadOnlyMemory<byte> body)
@@ -96,18 +132,33 @@ public sealed class PetStallHandlers(
         if (world.SessionOf(ownerId) is not { } owner || ReferenceEquals(owner, session)
             || owner.Stalls.Pets is not { } stall || owner.ActiveCharacter is not { } seller)
             return ValueTask.CompletedTask;
+        if (seller.MapId != buyer.MapId)
+        {
+            logger.LogWarning("[{Session}] {Buyer} cannot buy from {Seller}'s pet stall: on another map", session.Id, buyer.Name, seller.Name);
+            session.Send(StallMessages.PetStallClosed(ownerId));
+            return ValueTask.CompletedTask;
+        }
 
         lock (stall)
         {
             List<(Pet Pet, int Price)> lines = [];
             foreach (var slot in slots)
             {
-                if (!stall.Prices.TryGetValue(slot, out var price) || seller.Pets.Find(p => p.Slot == slot) is not { } pet)
+                var priced = stall.Prices.TryGetValue(slot, out var price);
+                var pet = seller.Pets.Find(p => p.Slot == slot);
+                var why = !priced || !stall.Offered.TryGetValue(slot, out var offered) ? "not on offer"
+                    : pet is null || !ReferenceEquals(pet, offered) ? "no longer the pet the stall opened with"
+                        : owner.Battle is not null ? "the seller is in a battle"
+                            : Unsellable(owner, seller, pet) is { } unsellable ? unsellable
+                                : !StallView.Saw(session.Stalls.SeenPets, stall, slot, price) ? "not the price the buyer was shown"
+                                    : null;
+                if (why is not null)
                 {
-                    session.Send(Offer(ownerId, stall, seller, session.Client));
+                    logger.LogWarning("[{Session}] pet stall buy: slot {Slot} refused: {Why}", session.Id, slot, why);
+                    Show(session, ownerId, stall, owner, seller);
                     return ValueTask.CompletedTask;
                 }
-                lines.Add((pet, price));
+                lines.Add((pet!, price));
             }
             var total = lines.Sum(l => (long)l.Price);
             string? refusal = total > buyer.Gold ? "not enough gold"
@@ -125,6 +176,7 @@ public sealed class PetStallHandlers(
             foreach (var (pet, price) in lines)
             {
                 stall.Prices.Remove(pet.Slot);
+                stall.Offered.Remove(pet.Slot);
                 owner.Send(StallMessages.PetSold(pet.NpcId, price));
                 PetTradeHandlers.Give(world, owner, seller, pet);
                 PetTradeHandlers.Receive(session, buyer, pet);
@@ -138,22 +190,28 @@ public sealed class PetStallHandlers(
             if (stall.Prices.Count == 0)
                 Close(owner, world);
             else
-                session.Send(Offer(ownerId, stall, seller, session.Client));
+                Show(session, ownerId, stall, owner, seller);
         }
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Builds the offer packet of a stall with its pets that are still there.</summary>
+    /// <summary>Sends a buyer the pets of a stall that are still the ones it opened with and can still be sold, and remembers what they saw.</summary>
+    /// <param name="session">The buyer's session.</param>
     /// <param name="ownerId">The owner's login id.</param>
-    /// <param name="stall">The stall.</param>
+    /// <param name="stall">The stall, locked by the caller.</param>
+    /// <param name="owner">The owner's session.</param>
     /// <param name="seller">The owner's character.</param>
-    /// <param name="client">The buyer's client generation.</param>
-    /// <returns>The packet bytes.</returns>
-    private static byte[] Offer(int ownerId, PetStall stall, Character seller, ClientGeneration client) =>
-        StallMessages.PetStallOffer(ownerId, stall.Prices
-            .Select(p => (p.Key, p.Value, Pet: seller.Pets.Find(x => x.Slot == p.Key)))
-            .Where(x => x.Pet is not null)
-            .Select(x => (x.Key, x.Value, Pets.Info(x.Pet!), x.Pet!.MaxHp, x.Pet!.MaxSp)), client);
+    private void Show(GameSession session, int ownerId, PetStall stall, GameSession owner, Character seller)
+    {
+        var shown = stall.Prices
+            .Select(p => (Slot: p.Key, Price: p.Value, Pet: seller.Pets.Find(x => x.Slot == p.Key)))
+            .Where(x => x.Pet is not null && stall.Offered.TryGetValue(x.Slot, out var offered) && ReferenceEquals(x.Pet, offered)
+                && Unsellable(owner, seller, x.Pet) is null)
+            .ToList();
+        session.Stalls.SeenPets = new StallView(stall, shown.ToDictionary(x => x.Slot, x => x.Price));
+        session.Send(StallMessages.PetStallOffer(ownerId, shown.Select(x => (x.Slot, x.Price, Pets.Info(x.Pet!), x.Pet!.MaxHp, x.Pet!.MaxSp)),
+            session.Client));
+    }
 
     /// <summary>Gives the active character of a session that is in the world.</summary>
     /// <param name="session">The player's session.</param>
