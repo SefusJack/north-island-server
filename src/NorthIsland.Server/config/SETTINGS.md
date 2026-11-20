@@ -68,6 +68,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `FieldEncounterCooldownSeconds` | The seconds after a field fight (and after arriving on a map) before the next field fight can start |
 | `FieldEncounterRadius` | How close in pixels a field monster's place or wander box must be to the player to be fought |
 | `FieldEncounterZones` | True when a field fight rolled inside an encounter zone of the map (a mine, 地雷塊) is taken from the zone's battle list; false fights only the field monsters around |
+| `FieldEncounterZonePercent` | The chance in percent that a field fight in an encounter zone comes from the zone rather than from field monsters that are near too; the other is tried when the first starts no battle |
 | `ElementAdvantageMultiplier` | The damage factor when the attacker's element overcomes the target's |
 | `ElementDisadvantageMultiplier` | The damage factor when the target's element overcomes the attacker's |
 | `DropToKillingBlowOnly` | True when only the fighters of the felling blow roll a monster's drops, instead of every winner |

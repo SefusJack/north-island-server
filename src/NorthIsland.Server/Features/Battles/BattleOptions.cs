@@ -18,6 +18,9 @@ public sealed class BattleOptions
     /// <summary>True when a field fight rolled inside an encounter zone of the map (a mine, 地雷塊) is taken from the zone's battle list; false fights only the field monsters around.</summary>
     public bool FieldEncounterZones { get; set; } = true;
 
+    /// <summary>The chance in percent that a field fight in an encounter zone comes from the zone rather than from field monsters that are near too; the other is tried when the first starts no battle.</summary>
+    public int FieldEncounterZonePercent { get; set; } = 50;
+
     /// <summary>A fixed pause in milliseconds between the actions of a round; 0 uses the animation lengths of the skills instead.</summary>
     public int BattleActionDelayMs { get; set; }
 
