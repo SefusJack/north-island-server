@@ -21,6 +21,8 @@
     "DefeatedMonsterHideSeconds": 30,
     "BattleImmunitySeconds": 5,
     "MonsterGoldRewards": false,
+    "GoldPerLevelMin": 0.1,
+    "GoldPerLevelMax": 1.0,
     "FieldEncounterCooldownSeconds": 30,
     "FieldEncounterRadius": 500,
     "FieldEncounterZones": true,

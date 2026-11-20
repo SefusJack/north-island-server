@@ -248,4 +248,10 @@ public sealed class BattleOptions
 
     /// <summary>True when winning a battle also pays gold.</summary>
     public bool MonsterGoldRewards { get; set; }
+
+    /// <summary>The lowest gold a monster pays per level; a level 100 monster at 0.1 pays at least 10.</summary>
+    public double GoldPerLevelMin { get; set; } = 0.1;
+
+    /// <summary>The highest gold a monster pays per level; a level 100 monster at 1 pays at most 100.</summary>
+    public double GoldPerLevelMax { get; set; } = 1.0;
 }

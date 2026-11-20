@@ -330,7 +330,7 @@ public sealed partial class BattleHandlers
             logger.LogInformation("[{Session}] {Name} learns {Skill} ({Id})", session.Id, character.Name, skill.Name, skill.Id);
         }
 
-        var gold = options.Value.MonsterGoldRewards ? defeated.Sum(n => BattleFormulas.GoldReward(n, GameRandom.Shared)) : 0;
+        var gold = options.Value.MonsterGoldRewards ? defeated.Sum(n => BattleFormulas.GoldReward(n, GameRandom.Shared, options.Value)) : 0;
         if (gold > 0)
             Purse.Credit(session, character, gold);
 

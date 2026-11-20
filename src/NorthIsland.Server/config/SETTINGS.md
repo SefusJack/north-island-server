@@ -65,6 +65,8 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `DefeatedMonsterHideSeconds` | How many seconds a monster that was beaten stays hidden on the map |
 | `BattleImmunitySeconds` | How many seconds after a battle a player cannot be drawn into a new fight |
 | `MonsterGoldRewards` | True when winning a battle also pays gold |
+| `GoldPerLevelMin` | The lowest gold a monster pays per level; the roll starts at level × this (0.1 gives a level 100 monster at least 10) |
+| `GoldPerLevelMax` | The highest gold a monster pays per level; the roll ends at level × this (1 gives a level 100 monster at most 100) |
 | `FieldEncounterCooldownSeconds` | The seconds after a field fight (and after arriving on a map) before the next field fight can start |
 | `FieldEncounterRadius` | How close in pixels a field monster's place or wander box must be to the player to be fought |
 | `FieldEncounterZones` | True when a field fight rolled inside an encounter zone of the map (a mine, 地雷塊) is taken from the zone's battle list; false fights only the field monsters around |
