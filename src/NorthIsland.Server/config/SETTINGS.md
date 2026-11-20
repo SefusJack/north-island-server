@@ -461,22 +461,25 @@ out of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common | 4 potions, bottles or good foods (1210 each, 48.4%); 6 themed uncommons such as riceballs, fireworks, festive hats, 2X EXP Copper/Silver Cards, grass, amity jellies (550 each, 33%); 5 themed rares such as costumes, maid suits, furniture, Gold EXP Cards, Space Contract, GPS, forging tools, the mall's own boxes (300 each, 15%); the event's big bag (50, 0.5%); one jackpot (15, 0.15%); a Bronze Card (190, 1.9%), a Silver Card (100, 1%) and a Golden Card (5, 0.05%) |
+| Common | 4 foods, Wishing Coins or Bamboo Dragonflies (1060 each, 42.4%); 6 uncommons such as fireworks, scrolls, amity jellies, Pet Lethe Scrolls, Delay Clocks, Alchemy Book 2 (550 each, 33%); 5 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, GPS, spars, Alchemy Books 3 and 4 (300 each, 15%); the event's big bag (50, 0.5%); one jackpot (15, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
 | Big | 7 themed rares (95 each, 66.5%) and a Silver Card (35, 3.5%); 4 themed jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Yacht, Bomb Diamonds, Potential Pill (60 each, 24%) and a Golden Card (20, 2%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar (17 each, 3.4%) and a Free Card (6, 0.6%) |
 
 The four choice cards (gift cards, `Data/GiftCards.tsv`) are exchanged for any one prize of their tier from every event,
-chosen by the player, so a prize whose event is months away is still within reach:
+chosen by the player, so a prize whose event is months away is still within reach. Everything a common bag (or the 2013 Big
+Turkey) gives stacks, so opening them doesn't fill the bag window; the prizes that don't stack (the timed riceballs, EXP
+cards and grass, the bottle potions, costumes, hats and furniture) come from the Bronze and Silver Cards, which do, or from
+the big bags. Holiday items fill only their own event's bags.
 
 | Card | Choose one of |
 |---|---|
-| Bronze Card (50017) | the 57 uncommons |
+| Bronze Card (50017) | the 57 uncommons, the Escape Button and the four bottle potions |
 | Silver Card (50018) | the 81 rares |
 | Golden Card (50019) | the 22 jackpots |
 | Free Card (50000) | the 12 top prizes |
 
-Outside its own event, getting a chosen prize takes about 2.5 to 5.5 times as many monsters as during it (about 1 in
-3,200 kills for an uncommon, 5,700 for a rare, 80,000 for a jackpot and 800,000 for a top prize, against 580, 2,200,
-32,000 and 210,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
+At 20 kills a minute that is about 1.2 Bronze Cards and 0.6 Silver Cards an hour. Outside its own event, getting a
+chosen prize takes about 1.5 to 5 times as many monsters as during it (about 1 in 1,000 kills for an uncommon, 2,000 for a
+rare, 80,000 for a jackpot and 800,000 for a top prize, against 350, 1,200, 26,000 and 170,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
 
 The mall's real boxes are prizes too (Gift Pack, War Pack, Scroll Pack, Gear Pack with the pet gear, Transferred Pack,
 Water Pack, Maid Box, Crystal Ice Cube, Super Gift Box, Friendship Pumpkin, Thanksgiving Egg, 2010 Jolly Pack, Anniversary
@@ -495,7 +498,7 @@ Mall items no event gives, on purpose:
 | Pet gear, in the Gear Pack | the 13 "Special for ..." pet gear pieces |
 
 The common bags can't be traded and the big bags (the year "Pack"s) can, as in the original game. The 2013 Big Turkey only
-opens into food and potions, so trading it in is worth more; the 2013 Big Box it is traded for is Thanksgiving's common
+opens into food, so trading it in is worth more; the 2013 Big Box it is traded for is Thanksgiving's common
 bag (the Pie and the Turkey drop at 1.67% each, so the Boxes come at the common bag rate), and the 2013 Big Egg its big bag.
 Christmas splits its common bags the same way: the Sock drops at 1.25% and the Happy Xmas Snowball at 1.67%, and 4
 Snowballs buy a Christmas Gift Pack (1.25 + 1.67 / 4 = 1.67).
