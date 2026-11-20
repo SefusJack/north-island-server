@@ -51,13 +51,29 @@ public static class Alchemy
     public static ushort Class(ItemRecord item, int i) =>
         item.Words142.Length > i && item.Words142[i] != EquipmentClass ? item.Words142[i] : (ushort)0;
 
+    /// <summary>
+    /// Item flag bit of the items an ordinary compound does not make, such as the instance dungeon rewards (Sea Wing Helmet and others). Such items
+    /// still go into a compound as materials, and a bless compound still makes the team NPCs' gear, which carries it too. Of the items players have
+    /// recorded, about 95% of those without the bit have come out of a compound and about 4% of those with it.
+    /// </summary>
+    public const ushort NotMadeFlag = 8;
+
+    /// <summary>
+    /// Item ids that carry <see cref="NotMadeFlag"/> but are recorded coming out of compounds often enough to keep: 61071 White Crystal and
+    /// 32102 Carrot.
+    /// </summary>
+    public static readonly IReadOnlySet<ushort> MadeDespiteFlag = new HashSet<ushort> { 61071, 32102 };
+
     /// <summary>Tells whether an item can come out of a compound.</summary>
     /// <param name="item">The item record to test.</param>
+    /// <param name="bless">True for a bless compound, which ignores <see cref="NotMadeFlag"/>.</param>
     /// <returns>
-    /// True when the item has a shop rank, a first class, a second class other than 67, is not a book and has a printable name.
+    /// True when the item has a shop rank, a first class, a second class other than 67, is not a book, has a printable name and, outside a bless
+    /// compound, does not carry <see cref="NotMadeFlag"/> (unless it is one of <see cref="MadeDespiteFlag"/>).
     /// </returns>
-    public static bool CanBeMade(ItemRecord item) =>
+    public static bool CanBeMade(ItemRecord item, bool bless = false) =>
         item.ShopColumn >= 1 && Class(item, 0) != 0 && Class(item, 1) != 67 && !IsBook(item)
+            && (bless || (item.Flags & NotMadeFlag) == 0 || MadeDespiteFlag.Contains(item.Id))
             && item.Name.Trim().Length > 0 && item.Name.All(ch => ch is >= ' ' and <= '~');
 
     /// <summary>Works out how many ranks above the lowest material a compound reaches.</summary>
@@ -99,7 +115,7 @@ public static class Alchemy
         var baseRank = materials.Min(m => m.ShopColumn);
         var target = baseRank + Jump(level, roll(100), skillLevel);
         var lowest = form is AlchemyForm.Junior or AlchemyForm.Superior ? Math.Max(1, baseRank - MaxRanksBelow) : baseRank + 1;
-        var inRange = all.Where(i => CanBeMade(i) && i.ShopColumn >= lowest && i.ShopColumn <= target).ToList();
+        var inRange = all.Where(i => CanBeMade(i, form == AlchemyForm.Bless) && i.ShopColumn >= lowest && i.ShopColumn <= target).ToList();
         var main = MainClass(materials, form, counts);
         var order = BaseOrder(materials, form, counts);
         var pool = form == AlchemyForm.Bless
