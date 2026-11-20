@@ -66,8 +66,11 @@ public sealed record ItemRecord
     /// <summary>Price an NPC store pays when the item is sold to it.</summary>
     public int SellPrice { get; init; }
 
-    /// <summary>Byte at offset 128, meaning not established.</summary>
-    public byte Unknown128 { get; init; }
+    /// <summary>
+    /// Who may wear the item, at offset 128 (the client's FUsableBy): 0 anyone; 1 body types 1 and 3; 2 body types 2 and 4; 4 to 7 body type 1 to
+    /// 4 only; 8, 9 and 13 pets only; 10 and 11 pets of one direction kind; 12 the Wind element (players and pets).
+    /// </summary>
+    public byte UsableBy { get; init; }
 
     /// <summary>
     /// Flag bits of the item; the server tests individual bits (for example to refuse stalls, storage or furniture use).
@@ -113,7 +116,7 @@ public sealed record ItemRecord
     /// <summary>Byte at offset 414, meaning not established.</summary>
     public byte Unknown414 { get; init; }
 
-    /// <summary>Three words at offset 415; the third is a flag word several handlers test (fusion, pose, body shift).</summary>
+    /// <summary>Three words at offset 415; the third (offset 419) is the item's pet NPC id, see <see cref="PetNpcId"/>.</summary>
     public ushort[] Words415 { get; init; } = [];
 
     /// <summary>Six bytes at offset 421; nothing reads them.</summary>
@@ -127,6 +130,15 @@ public sealed record ItemRecord
 
     /// <summary>Five integers at offset 437; nothing reads them.</summary>
     public int[] Ints437 { get; init; } = [];
+
+    /// <summary>
+    /// The NPC id at offset 419, the third word of <see cref="Words415"/> (the client's petNpcId): for equipment the pet that alone may wear it,
+    /// players never; for other items the NPC they name (the pet of a pet voucher, the shape of a Riceball). 0 when the item names none.
+    /// </summary>
+    public ushort PetNpcId => Words415.Length > 2 ? Words415[2] : (ushort)0;
+
+    /// <summary>The flag bit of the items that pets cannot wear (the client's PetEquipping).</summary>
+    public const ushort NotForPetsFlag = 64;
 
     /// <summary>True when the item can be worn in an equipment slot 1 to 6.</summary>
     public bool IsEquipment => EquipSlot is >= 1 and <= 6;

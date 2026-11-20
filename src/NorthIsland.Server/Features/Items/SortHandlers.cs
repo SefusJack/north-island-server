@@ -63,8 +63,9 @@ public static class SortHandlers
         {
             case Bag: // bag: sort, then clear the client's bag and send it again even when nothing moved, so a sort also mends a client bag that drifted
             {
+                // committed slots (BagLocks) and the puppet's item keep their place
                 var sorted = GridSort.Sort(c.Bag, items, BagItem.LastSlot, World.Bag.Rows, World.Bag.MaxStack,
-                    b => b.Slot == session.Vehicle?.BagSlot || (c.PuppetBagSlot != 0 && b.Slot == c.PuppetBagSlot), first: bagFirst);
+                    b => BagLocks.IsLocked(session, b.Slot) || (c.PuppetBagSlot != 0 && b.Slot == c.PuppetBagSlot), first: bagFirst);
                 session.Send(new PacketWriter(Action23.Code, Action23.QolSort).U8(1).U8(Bag).ToArray());
                 if (c.Bag.Count > 0)
                     session.Send(ItemMessages.BagList(c.Bag.OrderBy(b => b.Slot).Select(Entry)));

@@ -97,7 +97,7 @@ public sealed class ItemTable
             RequiredLevel = B(r, 119),
             Price = I(r, 120),
             SellPrice = I(r, 124),
-            Unknown128 = B(r, 128),
+            UsableBy = B(r, 128),
             Flags = W(r, 129),
             Unknown131 = I(r, 131),
             Unknown135 = B(r, 135),
