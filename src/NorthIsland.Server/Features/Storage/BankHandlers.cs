@@ -7,9 +7,11 @@ namespace NorthIsland.Server.Features.Storage;
 
 /// <summary>Serves the bank: items stored per character in a bank grid, and a bank gold balance next to the purse.</summary>
 /// <param name="items">The item records, for stack limits, item sizes and flags.</param>
+/// <param name="tents">The house handlers, to find the Wit Maid that opens the bank in a house.</param>
 /// <param name="logger">The logger.</param>
 public sealed class BankHandlers(
     ItemData items,
+    TentHandlers tents,
     ILogger<BankHandlers> logger)
 {
     /// <summary>The most gold a purse can hold, carried or in the bank (9,999,999).</summary>
@@ -52,7 +54,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: one byte per bag slot.</param>
     internal ValueTask OnStore(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character)
+        if (CharacterOf(session, "store") is not { } character)
             return ValueTask.CompletedTask;
         var moved = new List<string>();
         foreach (var slot in body.ToArray().Distinct())
@@ -99,7 +101,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: one byte per bank slot.</param>
     internal ValueTask OnWithdraw(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character)
+        if (CharacterOf(session, "withdraw") is not { } character)
             return ValueTask.CompletedTask;
         var moved = new List<string>();
         foreach (var slot in body.ToArray().Distinct())
@@ -145,7 +147,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: u8 source bank slot, u8 destination bank slot.</param>
     internal ValueTask OnMove(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character || body.Length < 2)
+        if (CharacterOf(session, "move") is not { } character || body.Length < 2)
             return ValueTask.CompletedTask;
         var (srcSlot, dstSlot) = (body.Span[0], body.Span[1]);
         var bank = character.Bank;
@@ -222,7 +224,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: u8 bank slot, u8 bag slot.</param>
     internal ValueTask OnDropIn(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character || body.Length < 2)
+        if (CharacterOf(session, "drop in") is not { } character || body.Length < 2)
             return ValueTask.CompletedTask;
         var (bankSlot, bagSlot) = (body.Span[0], body.Span[1]);
         var stack = Bag.Covering(character.Bag, items, bagSlot);
@@ -290,7 +292,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: u8 bag slot, u8 bank slot.</param>
     internal ValueTask OnDragOut(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character || body.Length < 2)
+        if (CharacterOf(session, "drag out") is not { } character || body.Length < 2)
             return ValueTask.CompletedTask;
         var (bagSlot, bankSlot) = (body.Span[0], body.Span[1]);
         var stack = Bag.Covering(character.Bank, items, bankSlot);
@@ -374,7 +376,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: i32 gold amount.</param>
     internal ValueTask OnDeposit(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character || body.Length < 4)
+        if (CharacterOf(session, "gold deposit") is not { } character || body.Length < 4)
             return ValueTask.CompletedTask;
         var amount = new PacketReader(body.Span).I32();
         if (amount > 0 && amount <= character.Gold && character.BankGold + (long)amount <= MaxGold)
@@ -414,7 +416,7 @@ public sealed class BankHandlers(
     /// <param name="body">The packet body: i32 gold amount.</param>
     internal ValueTask OnWithdrawGold(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session) is not { } character || body.Length < 4)
+        if (CharacterOf(session, "gold withdraw") is not { } character || body.Length < 4)
             return ValueTask.CompletedTask;
         var amount = new PacketReader(body.Span).I32();
         if (amount > 0 && amount <= character.BankGold && character.Gold + (long)amount <= MaxGold)
@@ -463,12 +465,41 @@ public sealed class BankHandlers(
     /// <returns>The packet entry.</returns>
     private static BankEntry ToEntry(BagItem b) => new(b.Slot, b.ItemId, b.Count, b.Wear, b.Insert, b.Fusion, b.Pose, b.BoxItem);
 
-    /// <summary>Returns the active character when the session is in the world.</summary>
+    /// <summary>
+    /// Returns the active character when the session is in the world with a bank window open: one an NPC event opened on the player's map
+    /// (<see cref="NpcService.AtNpc"/>), or the one of a Wit Maid in the house the player is in. A refusal is logged.
+    /// </summary>
     /// <param name="session">The player's session.</param>
+    /// <param name="request">The name of the request, for the log.</param>
     /// <returns>The active character, or null when the request must be ignored.</returns>
-    private static Character? CharacterOf(GameSession session)
+    private Character? CharacterOf(GameSession session, string request)
     {
         var character = session.ActiveCharacter;
-        return session.State == SessionState.InWorld && character is not null ? character : null;
+        if (session.State != SessionState.InWorld || character is null)
+            return null;
+        if (NpcService.AtNpc(session, character) || AtMaid(session, character))
+            return character;
+        logger.LogWarning(
+            "[{Session}] {Name}: bank {Request} refused, no bank open (map {Map}, event map {EventMap}, in battle {Battle})",
+            session.Id,
+            character.Name,
+            request,
+            character.MapId,
+            session.Event?.MapId,
+            session.Battle is not null);
+        return null;
     }
+
+    /// <summary>
+    /// Whether the player is out of battle in a house with a Wit Maid set up, whose talk menu opens the bank without an NPC event
+    /// (<c>76/1</c>).
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="character">The player's active character.</param>
+    /// <returns>True when a maid of the house can have the bank open.</returns>
+    private bool AtMaid(GameSession session, Character character) =>
+        session.Battle is null
+            && TentHandlers.IsHouseMap(character.MapId)
+            && tents.OwnerOfHouse(character.MapId) is { } owner
+            && owner.Character.Furniture.Exists(f => !f.Retained && MaidHandlers.MaidFurniture.Contains(f.ItemId));
 }

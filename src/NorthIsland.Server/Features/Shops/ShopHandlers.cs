@@ -14,7 +14,10 @@ public sealed class ShopHandlers(
     ItemData items,
     ILogger<ShopHandlers> logger)
 {
-    /// <summary>Handles a sell request (<c>27/2</c>): removes the listed bag stacks and pays their sell price, or answers with a failure.</summary>
+    /// <summary>
+    /// Handles a sell request (<c>27/2</c>): removes the listed bag stacks and pays their sell price, or answers with a failure. Needs the sell
+    /// window of an NPC open (<see cref="NpcService.AtNpc"/>).
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the sale kind and the bag slots to sell.</param>
     internal ValueTask OnSell(GameSession session, ReadOnlyMemory<byte> body)
@@ -22,6 +25,17 @@ public sealed class ShopHandlers(
         var character = session.ActiveCharacter;
         if (session.State != SessionState.InWorld || character is null)
             return ValueTask.CompletedTask;
+        if (!NpcService.AtNpc(session, character))
+        {
+            logger.LogWarning(
+                "[{Session}] sell without an open sell window (map {Map}, event map {EventMap}, in battle {Battle})",
+                session.Id,
+                character.MapId,
+                session.Event?.MapId,
+                session.Battle is not null);
+            session.Send(ShopMessages.SellResult(SellResult.Failed));
+            return ValueTask.CompletedTask;
+        }
 
         var request = SellRequest.Parse(body.Span);
         var stacks = new List<BagItem>();
@@ -132,15 +146,18 @@ public sealed class ShopHandlers(
         return BuyResult.Ok;
     }
 
-    /// <summary>Finds the store the player has open.</summary>
+    /// <summary>
+    /// Finds the store the player has open: the store dialog the running NPC event shows, looked up on the event's map, which must be the
+    /// player's current map, out of battle.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's character.</param>
-    /// <returns>The store interaction of the player's current map, or null when none is open.</returns>
+    /// <returns>The store interaction, or null when none is open.</returns>
     private EveInteract? OpenStore(GameSession session, Character character)
     {
-        if (session.Event?.OpenInteract is not { } index)
+        if (!NpcService.AtNpc(session, character) || session.Event!.OpenInteract is not { } index)
             return null;
-        var interact = maps.Scene(character.MapId)?.Interacts.FirstOrDefault(i => i.Index == index);
+        var interact = maps.Scene(session.Event.MapId)?.Interacts.FirstOrDefault(i => i.Index == index);
         return interact is { Kind: 2 or 3 } ? interact : null;
     }
 }
