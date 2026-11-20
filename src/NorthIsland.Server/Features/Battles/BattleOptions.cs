@@ -15,6 +15,9 @@ public sealed class BattleOptions
     /// <summary>How close in pixels a field monster's place or wander box must be to the player to be fought.</summary>
     public int FieldEncounterRadius { get; set; } = 500;
 
+    /// <summary>True when a field fight rolled inside an encounter zone of the map (a mine, 地雷塊) is taken from the zone's battle list; false fights only the field monsters around.</summary>
+    public bool FieldEncounterZones { get; set; } = true;
+
     /// <summary>A fixed pause in milliseconds between the actions of a round; 0 uses the animation lengths of the skills instead.</summary>
     public int BattleActionDelayMs { get; set; }
 

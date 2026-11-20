@@ -23,6 +23,7 @@
     "MonsterGoldRewards": false,
     "FieldEncounterCooldownSeconds": 30,
     "FieldEncounterRadius": 500,
+    "FieldEncounterZones": true,
     "ElementAdvantageMultiplier": 2.0,
     "ElementDisadvantageMultiplier": 0.5,
     "DropToKillingBlowOnly": true,
