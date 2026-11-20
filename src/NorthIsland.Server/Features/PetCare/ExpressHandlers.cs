@@ -77,7 +77,12 @@ public sealed class ExpressHandlers(
             return;
         var refusal = Check(session, c, job.TargetId, job.Stacks);
         if (refusal is null && world.SessionOf(job.TargetId) is { } target && target.ActiveCharacter is { } tc)
-            Deliver(session, c, target, tc, job);
+        {
+            if (!target.TryExclusive(out var held)) // the target is handling a packet: deliver on the next tick
+                return;
+            using (held)
+                Deliver(session, c, target, tc, job);
+        }
         else if (refusal is { } r)
             session.Send(ExpressMessages.Error(r.Code, r.Item));
         Finish(session, job);
