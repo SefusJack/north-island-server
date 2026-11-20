@@ -4,7 +4,10 @@ using NorthIsland.GameData.Events;
 
 namespace NorthIsland.Server.Features.Battles;
 
-/// <summary>Starts random fights against field monsters as a player walks.</summary>
+/// <summary>
+/// Starts random fights as a player walks: inside an encounter zone of the scene (a mine, 地雷塊) the zone's event picks the fight from its weighted
+/// battle list; elsewhere, or when the zone's event starts no battle, the field monsters around the player are fought. One roll and one cooldown cover both.
+/// </summary>
 public sealed class FieldEncounters
 {
     /// <summary>Map data for the scenes.</summary>
@@ -53,10 +56,13 @@ public sealed class FieldEncounters
         (_maps, _npcs, _world, _instances, _events, _options, _worldOptions, _logger) = (maps, npcs, world, instances, events, options, worldOptions, logger);
         events.EventFinished += (session, run) =>
         {
-            if (run.Source == EventEngine.FieldSource)
+            if (run.Source == EventEngine.FieldSource || run.Source.StartsWith(ZoneSourcePrefix, StringComparison.Ordinal))
                 session.Encounters.FieldQuietUntil = GameClock.UtcNow.AddSeconds(options.Value.FieldEncounterCooldownSeconds);
         };
     }
+
+    /// <summary>The prefix of the source name of a fight started by an encounter zone; it is how the end of such an event is recognised.</summary>
+    public const string ZoneSourcePrefix = "encounter zone ";
 
     /// <summary>Rolls for a random fight after the player took a step.</summary>
     /// <param name="session">The player's session.</param>
@@ -65,7 +71,7 @@ public sealed class FieldEncounters
     /// <summary>Starts a field fight when the roll succeeds and the player is allowed one.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="roll">The roll from 0 to 99; the fight can start only when it is below <see cref="BattleOptions.FieldEncounterPercent"/>.</param>
-    /// <param name="rng">The random source passed on to the event engine to pick a monster.</param>
+    /// <param name="rng">The random source passed on to the event engine to pick a monster's battle.</param>
     /// <returns>True when a fight was started.</returns>
     public bool TryStart(GameSession session, int roll, Random rng)
     {
@@ -88,6 +94,15 @@ public sealed class FieldEncounters
             return false;
         if (roll >= o.FieldEncounterPercent)
             return false;
+        if (o.FieldEncounterZones && _maps.Scene(map) is { } scene && ZoneAt(scene, character.X, character.Y) is { } mine
+            && _events.StartZone(session, mine, ZoneSourcePrefix + mine.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        {
+            session.Encounters.FieldQuietUntil = now.AddSeconds(o.FieldEncounterCooldownSeconds);
+            _logger.LogInformation(
+                "[{Session}] field encounter on map {Map} in encounter zone {Mine} at ({X},{Y}); next one in {Seconds} s at the earliest",
+                session.Id, map, mine.Index, character.X, character.Y, o.FieldEncounterCooldownSeconds);
+            return true;
+        }
         var near = Surrounding(session, character);
         if (near.Count == 0 || !_events.StartField(session, near, rng))
             return false;
@@ -97,6 +112,13 @@ public sealed class FieldEncounters
             session.Id, map, near.Count, character.X, character.Y, o.FieldEncounterCooldownSeconds);
         return true;
     }
+
+    /// <summary>Finds the encounter zone (mine) of a scene that holds a point.</summary>
+    /// <param name="scene">The scene of the map.</param>
+    /// <param name="x">The X coordinate in map pixels.</param>
+    /// <param name="y">The Y coordinate in map pixels.</param>
+    /// <returns>The first zone in index order whose rectangle holds the point, or null.</returns>
+    public static EveMine? ZoneAt(EveScene scene, int x, int y) => scene.Mines.FirstOrDefault(m => m.Area.Contains(x, y));
 
     /// <summary>Collects the field monsters close enough to the player to start a fight.</summary>
     /// <param name="session">The player's session.</param>

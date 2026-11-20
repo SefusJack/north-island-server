@@ -67,6 +67,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `MonsterGoldRewards` | True when winning a battle also pays gold |
 | `FieldEncounterCooldownSeconds` | The seconds after a field fight (and after arriving on a map) before the next field fight can start |
 | `FieldEncounterRadius` | How close in pixels a field monster's place or wander box must be to the player to be fought |
+| `FieldEncounterZones` | True when a field fight rolled inside an encounter zone of the map (a mine, 地雷塊) is taken from the zone's battle list; false fights only the field monsters around |
 | `ElementAdvantageMultiplier` | The damage factor when the attacker's element overcomes the target's |
 | `ElementDisadvantageMultiplier` | The damage factor when the target's element overcomes the attacker's |
 | `DropToKillingBlowOnly` | True when only the fighters of the felling blow roll a monster's drops, instead of every winner |
