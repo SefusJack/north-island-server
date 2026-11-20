@@ -519,8 +519,15 @@ public static class BattleFormulas
     /// <summary>Rolls the gold a monster pays.</summary>
     /// <param name="npc">The monster's record.</param>
     /// <param name="rng">The random source.</param>
-    /// <returns>Three times the monster's level plus a roll from 0 to 5.</returns>
-    public static int GoldReward(NpcRecord npc, Random rng) => Math.Max(1, (int)npc.Level) * 3 + rng.Next(0, 6);
+    /// <param name="o">The battle options with the gold-per-level bounds.</param>
+    /// <returns>A roll between the monster's level times the lower and the upper bound, both included, never below 1.</returns>
+    public static int GoldReward(NpcRecord npc, Random rng, BattleOptions o)
+    {
+        var level = Math.Max(1, (int)npc.Level);
+        var low = (int)Math.Round(level * Math.Min(o.GoldPerLevelMin, o.GoldPerLevelMax));
+        var high = (int)Math.Round(level * Math.Max(o.GoldPerLevelMin, o.GoldPerLevelMax));
+        return Math.Max(1, rng.Next(Math.Max(0, low), Math.Max(0, high) + 1));
+    }
 
     /// <summary>Rolls whether a monster drops an item and which one.</summary>
     /// <param name="npc">The monster's record with its item list.</param>
