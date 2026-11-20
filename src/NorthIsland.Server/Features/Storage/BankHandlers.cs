@@ -6,7 +6,7 @@ using NorthIsland.Protocol.Messages.Player;
 namespace NorthIsland.Server.Features.Storage;
 
 /// <summary>Serves the bank: items stored per character in a bank grid, and a bank gold balance next to the purse.</summary>
-/// <param name="items">The item records, for stack limits and item sizes.</param>
+/// <param name="items">The item records, for stack limits, item sizes and flags.</param>
 /// <param name="logger">The logger.</param>
 public sealed class BankHandlers(
     ItemData items,
@@ -45,8 +45,8 @@ public sealed class BankHandlers(
     }
 
     /// <summary>
-    /// Moves whole bag stacks into the bank (<c>30/2</c>). A slot with nothing, or with the ridden vehicle, is skipped; a stack that does not fit
-    /// ends the order with the bank-full notice.
+    /// Moves whole bag stacks into the bank (<c>30/2</c>). A slot with nothing, with the ridden vehicle or with a no-store item is skipped; a stack
+    /// that does not fit ends the order with the bank-full notice.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: one byte per bag slot.</param>
@@ -58,7 +58,7 @@ public sealed class BankHandlers(
         foreach (var slot in body.ToArray().Distinct())
         {
             var stack = character.Bag.Find(b => b.Slot == slot);
-            if (stack is null || session.Vehicle?.BagSlot == slot)
+            if (stack is null || session.Vehicle?.BagSlot == slot || NoStore(stack))
             {
                 logger.LogWarning("[{Session}] bank store: bag slot {Slot} cannot be stored", session.Id, slot);
                 continue;
@@ -77,7 +77,9 @@ public sealed class BankHandlers(
                 stack.Insert,
                 stack.Fusion,
                 stack.Pose,
-                stack.BoxItem))
+                stack.BoxItem,
+                stack.Used,
+                stack.Extra))
                 session.Send(
                     BankMessages.Put(new BankEntry(bankStack.Slot, stack.ItemId, added, stack.Wear, stack.Insert, stack.Fusion, stack.Pose, stack.BoxItem)));
             session.Send(ItemMessages.BagSlotDecrease(stack.Slot, stack.Count));
@@ -113,29 +115,20 @@ public sealed class BankHandlers(
                 session.Send(ShopMessages.BuyResult(BuyResult.InventoryFull));
                 break;
             }
-            foreach (var (bagStack, added) in Bag.Add(
-                character.Bag,
-                items,
-                stack.ItemId,
-                stack.Count,
-                stack.Wear,
-                stack.Insert,
-                stack.Fusion,
-                stack.Pose,
-                stack.BoxItem))
-                session.Send(
-                    ItemMessages.BagAdd(
-                        new BagEntry
-                        {
-                            Slot = bagStack.Slot,
-                            ItemId = stack.ItemId,
-                            Count = added,
-                            Wear = stack.Wear,
-                            Insert = stack.Insert,
-                            FusionLevel = stack.Fusion,
-                            PoseItemId = stack.Pose,
-                            BoxItemId = stack.BoxItem
-                        }));
+            Bag.SendAdded(
+                session,
+                Bag.Add(
+                    character.Bag,
+                    items,
+                    stack.ItemId,
+                    stack.Count,
+                    stack.Wear,
+                    stack.Insert,
+                    stack.Fusion,
+                    stack.Pose,
+                    stack.BoxItem,
+                    stack.Used,
+                    stack.Extra));
             session.Send(BankMessages.SlotDecrease(stack.Slot, stack.Count));
             character.Bank.Remove(stack);
             moved.Add($"{items[stack.ItemId]?.Name} x{stack.Count}");
@@ -221,7 +214,10 @@ public sealed class BankHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Drops a bag stack on a bank slot: onto the same stackable item there, or as a new stack where it fits.</summary>
+    /// <summary>
+    /// Drops a bag stack on a bank slot: onto the same stackable item there, or as a new stack where it fits. The ridden vehicle and no-store items
+    /// stay in the bag.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: u8 bank slot, u8 bag slot.</param>
     internal ValueTask OnDropIn(GameSession session, ReadOnlyMemory<byte> body)
@@ -230,7 +226,7 @@ public sealed class BankHandlers(
             return ValueTask.CompletedTask;
         var (bankSlot, bagSlot) = (body.Span[0], body.Span[1]);
         var stack = Bag.Covering(character.Bag, items, bagSlot);
-        if (stack is null || session.Vehicle?.BagSlot == stack.Slot || bankSlot is < BagItem.FirstSlot or > BagItem.LastSlot)
+        if (stack is null || session.Vehicle?.BagSlot == stack.Slot || NoStore(stack) || bankSlot is < BagItem.FirstSlot or > BagItem.LastSlot)
         {
             logger.LogWarning("[{Session}] bank drop in: bag slot {Bag} cannot be stored or bad bank slot {Bank}", session.Id, bagSlot, bankSlot);
             return ValueTask.CompletedTask;
@@ -267,7 +263,9 @@ public sealed class BankHandlers(
                     Insert = stack.Insert,
                     Fusion = stack.Fusion,
                     Pose = stack.Pose,
-                    BoxItem = stack.BoxItem
+                    BoxItem = stack.BoxItem,
+                    Used = stack.Used,
+                    Extra = stack.Extra
                 });
             entry = new BankEntry(bankSlot, stack.ItemId, moved, stack.Wear, stack.Insert, stack.Fusion, stack.Pose, stack.BoxItem);
         }
@@ -332,7 +330,9 @@ public sealed class BankHandlers(
                 Insert = stack.Insert,
                 Fusion = stack.Fusion,
                 Pose = stack.Pose,
-                BoxItem = stack.BoxItem
+                BoxItem = stack.BoxItem,
+                Used = stack.Used,
+                Extra = stack.Extra
             };
             character.Bag.Add(into);
         }
@@ -347,7 +347,9 @@ public sealed class BankHandlers(
                     Insert = into.Insert,
                     FusionLevel = into.Fusion,
                     PoseItemId = into.Pose,
-                    BoxItemId = into.BoxItem
+                    BoxItemId = into.BoxItem,
+                    UsedAmount = into.Used,
+                    ExtraAmount = into.Extra
                 }));
         session.Send(BankMessages.SlotDecrease(stack.Slot, moved));
         stack.Count -= moved;
@@ -449,14 +451,12 @@ public sealed class BankHandlers(
     /// <param name="itemId">The item to add.</param>
     /// <param name="count">How many to add.</param>
     /// <returns>True when all of the items fit.</returns>
-    private bool AllFit(List<BagItem> grid, ushort itemId, int count)
-    {
-        List<BagItem> copy = [
-            .. grid.Select(
-                b => new BagItem { Slot = b.Slot, ItemId = b.ItemId, Count = b.Count, Wear = b.Wear, Fusion = b.Fusion, Pose = b.Pose, BoxItem = b.BoxItem })
-        ];
-        return Bag.Add(copy, items, itemId, count).Sum(c => c.Added) == count;
-    }
+    private bool AllFit(List<BagItem> grid, ushort itemId, int count) => Bag.Add(Bag.Trial(grid), items, itemId, count).Sum(c => c.Added) == count;
+
+    /// <summary>Whether a stack's item has the no-store flag (32), which keeps it out of the bank as out of the warehouse and the Item Bag.</summary>
+    /// <param name="stack">The bag stack.</param>
+    /// <returns>True when the stack must stay in the bag.</returns>
+    private bool NoStore(BagItem stack) => ((items[stack.ItemId]?.Flags ?? 0) & MiniGridHandlers.NoStoreFlag) != 0;
 
     /// <summary>Converts a stored stack to the entry of a bank packet.</summary>
     /// <param name="b">The stored stack.</param>
