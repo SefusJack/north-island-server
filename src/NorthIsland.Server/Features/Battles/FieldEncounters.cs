@@ -5,8 +5,9 @@ using NorthIsland.GameData.Events;
 namespace NorthIsland.Server.Features.Battles;
 
 /// <summary>
-/// Starts random fights as a player walks: inside an encounter zone of the scene (a mine, 地雷塊) the zone's event picks the fight from its weighted
-/// battle list; elsewhere, or when the zone's event starts no battle, the field monsters around the player are fought. One roll and one cooldown cover both.
+/// Starts random fights as a player walks, from two sources: the encounter zone of the scene the player stands in (a mine, 地雷塊), whose event picks
+/// the fight from its weighted battle list, and the field monsters around the player. When both are there, <see cref="BattleOptions.FieldEncounterZonePercent"/>
+/// decides which one is tried first, and the other is tried when the first starts no battle. One roll and one cooldown cover both.
 /// </summary>
 public sealed class FieldEncounters
 {
@@ -71,7 +72,7 @@ public sealed class FieldEncounters
     /// <summary>Starts a field fight when the roll succeeds and the player is allowed one.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="roll">The roll from 0 to 99; the fight can start only when it is below <see cref="BattleOptions.FieldEncounterPercent"/>.</param>
-    /// <param name="rng">The random source passed on to the event engine to pick a monster's battle.</param>
+    /// <param name="rng">The random source that decides between a zone and the monsters around, passed on to the event engine to pick a monster's battle.</param>
     /// <returns>True when a fight was started.</returns>
     public bool TryStart(GameSession session, int roll, Random rng)
     {
@@ -94,22 +95,43 @@ public sealed class FieldEncounters
             return false;
         if (roll >= o.FieldEncounterPercent)
             return false;
-        if (o.FieldEncounterZones && _maps.Scene(map) is { } scene && ZoneAt(scene, character.X, character.Y) is { } mine
-            && _events.StartZone(session, mine, ZoneSourcePrefix + mine.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        var mine = o.FieldEncounterZones && _maps.Scene(map) is { } scene ? ZoneAt(scene, character.X, character.Y) : null;
+        var near = Surrounding(session, character);
+        var zoneFirst = mine is not null && ZoneFirst(near.Count > 0, rng.Next(100), o.FieldEncounterZonePercent);
+        if (zoneFirst && StartZone(session, character, mine!))
+            return true;
+        if (near.Count > 0 && _events.StartField(session, near, rng))
         {
             session.Encounters.FieldQuietUntil = now.AddSeconds(o.FieldEncounterCooldownSeconds);
             _logger.LogInformation(
-                "[{Session}] field encounter on map {Map} in encounter zone {Mine} at ({X},{Y}); next one in {Seconds} s at the earliest",
-                session.Id, map, mine.Index, character.X, character.Y, o.FieldEncounterCooldownSeconds);
+                "[{Session}] field encounter on map {Map} against one of {Count} monster(s) around ({X},{Y}); next one in {Seconds} s at the earliest",
+                session.Id, map, near.Count, character.X, character.Y, o.FieldEncounterCooldownSeconds);
             return true;
         }
-        var near = Surrounding(session, character);
-        if (near.Count == 0 || !_events.StartField(session, near, rng))
+        return !zoneFirst && mine is not null && StartZone(session, character, mine);
+    }
+
+    /// <summary>Tells whether the encounter zone the player stands in is tried before the field monsters around.</summary>
+    /// <param name="monstersNear">True when field monsters are close enough to be fought.</param>
+    /// <param name="roll">A roll from 0 to 99.</param>
+    /// <param name="zonePercent">The chance in percent that the zone goes first when monsters are near too.</param>
+    /// <returns>True when the zone goes first: always when no monster is near, otherwise when the roll is below the chance.</returns>
+    public static bool ZoneFirst(bool monstersNear, int roll, int zonePercent) => !monstersNear || roll < zonePercent;
+
+    /// <summary>Starts the fight of an encounter zone and the cooldown, when the zone's event starts a battle.</summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="character">The player's active character.</param>
+    /// <param name="mine">The zone the player stands in.</param>
+    /// <returns>True when a fight was started.</returns>
+    private bool StartZone(GameSession session, Character character, EveMine mine)
+    {
+        if (!_events.StartZone(session, mine, ZoneSourcePrefix + mine.Index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
             return false;
-        session.Encounters.FieldQuietUntil = now.AddSeconds(o.FieldEncounterCooldownSeconds);
+        var seconds = _options.Value.FieldEncounterCooldownSeconds;
+        session.Encounters.FieldQuietUntil = GameClock.UtcNow.AddSeconds(seconds);
         _logger.LogInformation(
-            "[{Session}] field encounter on map {Map} against one of {Count} monster(s) around ({X},{Y}); next one in {Seconds} s at the earliest",
-            session.Id, map, near.Count, character.X, character.Y, o.FieldEncounterCooldownSeconds);
+            "[{Session}] field encounter on map {Map} in encounter zone {Mine} at ({X},{Y}); next one in {Seconds} s at the earliest",
+            session.Id, character.MapId, mine.Index, character.X, character.Y, seconds);
         return true;
     }
 

@@ -24,6 +24,7 @@
     "FieldEncounterCooldownSeconds": 30,
     "FieldEncounterRadius": 500,
     "FieldEncounterZones": true,
+    "FieldEncounterZonePercent": 50,
     "ElementAdvantageMultiplier": 2.0,
     "ElementDisadvantageMultiplier": 0.5,
     "DropToKillingBlowOnly": true,
