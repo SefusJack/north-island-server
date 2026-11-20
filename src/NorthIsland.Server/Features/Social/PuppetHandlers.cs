@@ -95,7 +95,9 @@ public sealed class PuppetHandlers(
     private (Character? Character, GameSession? Session, Account? Account) RequesterOf(int requesterId, int helperId, byte? requesterSlot)
     {
         var account = AccountOf(requesterId);
-        var c = helperId == 0 ? null : account?.Characters.Find(k => k.PuppetHelperId == helperId && (requesterSlot is null || k.Slot == requesterSlot));
+        var c = helperId == 0
+            ? null
+            : account?.Characters.Find(k => k.PuppetHelperId == helperId && (requesterSlot is null || k.Slot == requesterSlot));
         return (c, SessionPlaying(requesterId, c), account);
     }
 
@@ -501,7 +503,7 @@ public sealed class PuppetHandlers(
             _ = store.SaveAsync(racc);
         if (card is not null && world.SessionOf(helperId) is null && hacc is not null)
             _ = store.SaveAsync(hacc);
-        logger.LogInformation("Puppet training of {Requester} ends", requester?.Name ?? requesterId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        logger.LogInformation("Puppet training of {Requester} ({Id}) ends", requester?.Name ?? "", requesterId);
     }
 
     /// <summary>Ends the relations of a player that have lasted longer than the allowed days.</summary>

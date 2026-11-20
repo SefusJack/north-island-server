@@ -35,7 +35,7 @@ public sealed class BoardHandlers(
     /// <summary>The map on which each session was last shown the public notice board by its NPC.</summary>
     private readonly ConditionalWeakTable<GameSession, StrongBox<ushort>> _boardShown = [];
 
-    /// <summary>The posting form (82/8) each session was last shown: true for the guild board, false for the public board; used up by a post.</summary>
+    /// <summary>The posting form (82/8) each session was last shown: true for the guild board, false for the public one; a post uses it up.</summary>
     private readonly ConditionalWeakTable<GameSession, StrongBox<bool>> _formShown = [];
 
     /// <summary>When each account last posted a notice (UTC), by login id.</summary>

@@ -336,7 +336,7 @@ public sealed class MarriageHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Cancels a pending application or divorce and tells both players; entries of either player that point to another request are kept.</summary>
+    /// <summary>Cancels a pending application or divorce and tells both players; an entry of either player for another request is kept.</summary>
     /// <param name="pending">The request to cancel.</param>
     /// <param name="byId">Login id of the player who cancelled or left.</param>
     /// <param name="divorce">True for a divorce, false for a marriage application.</param>
@@ -452,7 +452,8 @@ public sealed class MarriageHandlers(
             if (marriages.Marry(application, gc, bc) is not { } couple)
             {
                 ToChurch(MarriageMessages.WeddingStep(99, g, b));
-                logger.LogWarning("Wedding of {Groom} and {Bride} refused at the end: the application is gone or one is already married", gc.Name, bc.Name);
+                logger.LogWarning("Wedding of {Groom} and {Bride} refused at the end: the application is gone or one is already married", gc.Name,
+                    bc.Name);
                 return;
             }
             foreach (var pid in new[] { g, b })

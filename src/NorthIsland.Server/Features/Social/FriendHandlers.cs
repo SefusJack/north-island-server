@@ -181,7 +181,8 @@ public sealed class FriendHandlers(
         var text = GameEncoding.GetString(body.Span[(1 + 4 * count)..]);
         if (text.Length == 0 || text.Length > MaxMailText || count > FriendEntry.MaxFriends)
         {
-            logger.LogWarning("[{Session}] {Name}: mail refused ({Count} recipients, {Length} characters)", session.Id, character.Name, count, text.Length);
+            logger.LogWarning("[{Session}] {Name}: mail refused ({Count} recipients, {Length} characters)", session.Id, character.Name, count,
+                text.Length);
             return;
         }
         if (!TakeMailTurn(session))

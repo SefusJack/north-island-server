@@ -80,7 +80,8 @@ public sealed class FurMailHandlers(
         }
         if (text.Length > MaxText || !FriendHandlers.TakeMailTurn(session))
         {
-            logger.LogWarning("[{Session}] {Name}: letter to {Target} refused ({Length} characters, or too soon)", session.Id, c.Name, name, text.Length);
+            logger.LogWarning("[{Session}] {Name}: letter to {Target} refused ({Length} characters, or too soon)", session.Id, c.Name, name,
+                text.Length);
             session.Send(FurMailMessages.Result(1));
             return;
         }

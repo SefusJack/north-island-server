@@ -105,7 +105,7 @@ public sealed class GuildRegistry
         }
     }
 
-    /// <summary>Adds a member to a guild if, under the lock, the guild still exists, has room and the player is in no guild; saves on success.</summary>
+    /// <summary>Adds a member to a guild if, under the lock, the guild still exists, has room and the player is in no guild; saves.</summary>
     /// <param name="guild">The guild to join.</param>
     /// <param name="member">The new member's entry.</param>
     /// <returns>True when the member was added.</returns>

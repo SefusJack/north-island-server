@@ -85,8 +85,8 @@ public sealed class GuildHandlers(
         var wait = TimeSpan.FromSeconds(options.Value.Guilds.BadgeUploadSeconds);
         if (_badgeUploads.TryGetValue(guild.Id, out var last) && now - last < wait)
         {
-            logger.LogWarning("[{Session}] {Name}: guild badge upload refused, guild '{Guild}' uploaded one {Seconds:0} s ago", session.Id, character.Name,
-                guild.Name, (now - last).TotalSeconds);
+            logger.LogWarning("[{Session}] {Name}: guild badge upload refused, guild '{Guild}' uploaded one {Seconds:0} s ago", session.Id,
+                character.Name, guild.Name, (now - last).TotalSeconds);
             return ValueTask.CompletedTask;
         }
         _badgeUploads[guild.Id] = now;
