@@ -128,8 +128,8 @@ public sealed class StallHandlers(
 
             foreach (var (stack, count, price) in lines)
             {
-                var (slot, itemId, wear, insert, fusion, pose, boxItem) =
-                    (stack.Slot, stack.ItemId, stack.Wear, stack.Insert, stack.Fusion, stack.Pose, stack.BoxItem);
+                var (slot, itemId, wear, insert, fusion, pose, boxItem, used, extra) =
+                    (stack.Slot, stack.ItemId, stack.Wear, stack.Insert, stack.Fusion, stack.Pose, stack.BoxItem, stack.Used, stack.Extra);
                 stack.Count -= count;
                 if (stack.Count == 0)
                 {
@@ -138,8 +138,7 @@ public sealed class StallHandlers(
                 }
                 owner.Send(ItemMessages.BagSlotDecrease(slot, count));
                 owner.Send(StallMessages.Sold(itemId, count, price * count, slot));
-                Bag.Add(buyer, items, itemId, count, wear, insert, fusion, pose, boxItem);
-                session.Send(GroundMessages.ItemObtained(itemId, count));
+                Bag.SendAdded(session, Bag.Add(buyer, items, itemId, count, wear, insert, fusion, pose, boxItem, used, extra));
                 logger.LogInformation("[{Session}] {Buyer} buys {Item} x{Count} from {Seller}'s stall for {Gold}", session.Id, buyer.Name,
                     items[itemId]?.Name, count, seller.Name, price * count);
             }
