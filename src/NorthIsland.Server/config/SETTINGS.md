@@ -138,7 +138,7 @@ Each row: Item = the item id that drops; MinLevel = the lowest monster level the
 | `ExpPerExtraAction` | The share added to the experience for each action after the first on a monster |
 | `LevelGapFullUpTo` | The level lead over a monster up to which its experience is paid in full |
 | `LevelGapZeroFrom` | The level lead over a monster from which no experience is paid |
-| `TrainingIslandFlatExp` | The experience a win on the Training Island adds on top of the normal amount, for a player and a pet; events and potions do not raise it |
+| `TrainingIslandFlatExp` | The experience a win on the Training Island adds on top of the normal amount, for a player and a pet; events and potions do not raise it. Only while a Training Voucher, Ticket or Fare is running: without one, an island win gives no experience at all and no per-round heal (drops still come) |
 | `PetDefeatAmityLoss` | The amity a pet loses when it falls in a battle |
 | `PetDefeatExpLossPercent` | The percent of the current level's exp a pet loses when it falls; 0 means it loses amity only |
 | `PetAmityPerLevel` | The amity a pet gains for each level it gains |

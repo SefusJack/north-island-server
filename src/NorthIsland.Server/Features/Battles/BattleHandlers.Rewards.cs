@@ -190,6 +190,12 @@ public sealed partial class BattleHandlers
             if (earns is not null && playerFighter is { BuffedPet: true })
                 own += BattleFormulas.BuffShare(buffShareBase, o.BuffSharePercent);
             own += flat;
+            // Without a running training state, a win on the Training Island gives no experience, to the player or to the pet.
+            if (TrainingIslandHandlers.IsUntrainedOnIsland(character))
+            {
+                own = 0;
+                earns = null;
+            }
             character.Exp = (int)Math.Min(int.MaxValue, (long)character.Exp + (long)Math.Round(own));
             shares.Add((winner, (int)Math.Round(own)));
             winner.Send(InnMessages.SetAttribute(Action8.AttrExp, character.Exp));
@@ -310,7 +316,8 @@ public sealed partial class BattleHandlers
     private int TrainingFlatExp(Data.Character character, List<NorthIsland.GameData.Npcs.NpcRecord> defeated)
     {
         var o = options.Value;
-        return o.TrainingIslandFlatExp > 0 && TrainingIslandHandlers.IsIslandMap(character.MapId) && defeated.Count > 0
+        return o.TrainingIslandFlatExp > 0 && TrainingIslandHandlers.IsIslandMap(character.MapId) && TrainingIslandHandlers.IsTraining(character)
+            && defeated.Count > 0
             ? o.TrainingIslandFlatExp : 0;
     }
 
