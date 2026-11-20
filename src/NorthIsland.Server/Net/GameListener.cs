@@ -11,12 +11,14 @@ namespace NorthIsland.Server.Net;
 /// <param name="router">Dispatches the incoming packets of each session.</param>
 /// <param name="store">The account store.</param>
 /// <param name="world">The online sessions.</param>
+/// <param name="accountSessions">The live session of each account, released when a session ends.</param>
 /// <param name="options">The server options.</param>
 /// <param name="loggers">Creates the loggers of the listener and its sessions.</param>
 public sealed class GameListener(
     PacketRouter router,
     IAccountStore store,
     WorldState world,
+    AccountSessions accountSessions,
     IOptions<ServerOptions> options,
     ILoggerFactory loggers) : BackgroundService
 {
@@ -95,7 +97,10 @@ public sealed class GameListener(
         await Task.Delay(TimeSpan.FromMilliseconds(100), ct).ConfigureAwait(false);
     }
 
-    /// <summary>Runs a session and, when it ends, aborts its trades, removes it from the world and saves its account.</summary>
+    /// <summary>
+    /// Runs a session and, when it ends, aborts its trades, closes its stalls, removes it from the world, saves its account and releases its claim
+    /// on the account; each step runs even when an earlier one throws.
+    /// </summary>
     /// <param name="session">The session to run.</param>
     /// <param name="ct">Cancels the session.</param>
     private async Task RunSessionAsync(GameSession session, CancellationToken ct)
@@ -112,26 +117,51 @@ public sealed class GameListener(
             }
         }
 
-        TradeHandlers.Abort(session);
-        PetTradeHandlers.Abort(session);
-        session.Stalls.Items = null;
-        session.Stalls.Pets = null;
-        session.Stalls.Utensils = null;
-        world.Leave(session);
-
-        if (session.Account is { } account && session.ActiveCharacter is { } character)
+        try
         {
-            try
+            Cleanup(session, "trade abort", () => TradeHandlers.Abort(session));
+            Cleanup(session, "pet trade abort", () => PetTradeHandlers.Abort(session));
+            Cleanup(session, "stall close", () =>
             {
-                await store.SaveAsync(account, CancellationToken.None).ConfigureAwait(false);
-                _logger.LogInformation("[{Session}] saved {Name} at map {Map} ({X}, {Y})",
-                    session.Id, character.Name, character.MapId, character.X, character.Y);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[{Session}] saving {Account} failed", session.Id, account.Name);
-            }
+                session.Stalls.Items = null;
+                session.Stalls.Pets = null;
+                session.Stalls.Utensils = null;
+            });
+            Cleanup(session, "world leave", () => world.Leave(session));
         }
-        _sessions.TryRemove(session.Id, out _);
+        finally
+        {
+            if (session.Account is { } account && session.ActiveCharacter is { } character)
+            {
+                try
+                {
+                    await store.SaveAsync(account, CancellationToken.None).ConfigureAwait(false);
+                    _logger.LogInformation("[{Session}] saved {Name} at map {Map} ({X}, {Y})",
+                        session.Id, character.Name, character.MapId, character.X, character.Y);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[{Session}] saving {Account} failed", session.Id, account.Name);
+                }
+            }
+            accountSessions.Release(session);
+            _sessions.TryRemove(session.Id, out _);
+        }
+    }
+
+    /// <summary>Runs one disconnect cleanup step, logging instead of throwing when it fails so that the later steps and the save still run.</summary>
+    /// <param name="session">The session that ended.</param>
+    /// <param name="step">The step, for the log.</param>
+    /// <param name="action">The step itself.</param>
+    private void Cleanup(GameSession session, string step, Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{Session}] disconnect cleanup '{Step}' failed", session.Id, step);
+        }
     }
 }

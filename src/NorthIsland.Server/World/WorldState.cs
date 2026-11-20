@@ -133,13 +133,27 @@ public sealed class WorldState(
 
     /// <summary>
     /// Takes a player out of the online world: ends their battle, auto collecting, fishing and team, banks their online
-    /// time and tells everyone.
+    /// time and tells everyone. For a session that is not the one online under its player id (not yet in the world, or
+    /// already left) and not in a battle it only drops what the session itself holds; a session that lost its account is
+    /// only removed.
     /// </summary>
     /// <param name="session">The player's session.</param>
     public void Leave(GameSession session)
     {
         if (session.Account is null)
+        {
+            RemoveWithoutAccount(session);
             return;
+        }
+        if ((!_online.TryGetValue(PlayerId(session), out var online) || !ReferenceEquals(online, session)) && session.Battle is null)
+        {
+            // not in the world (yet or any more): the team, friends and map of the player id may be a newer session's by now
+            session.AttributeSent = null;
+            if (session.Watching is { } watching)
+                lock (watching.Watchers)
+                    watching.Watchers.Remove(session);
+            return;
+        }
         Leaving?.Invoke(session);
         if (session.Battle is { } battle)
         {
@@ -165,6 +179,24 @@ public sealed class WorldState(
                 other.Send(left);
         }
         logger.LogInformation("[{Session}] {Name} left the world ({Count} online)", session.Id, session.ActiveCharacter?.Name, _online.Count);
+    }
+
+    /// <summary>Removes a session that is online without an account under whatever player id it was entered with, and tells everyone.</summary>
+    /// <param name="session">The session.</param>
+    private void RemoveWithoutAccount(GameSession session)
+    {
+        lock (_membership)
+        {
+            foreach (var entry in _online.Where(kv => ReferenceEquals(kv.Value, session)).ToList())
+            {
+                if (!_online.TryRemove(entry))
+                    continue;
+                var left = WorldServerMessages.PlayerLeft(entry.Key);
+                foreach (var other in _online.Values)
+                    other.Send(left);
+                logger.LogWarning("[{Session}] removed from the world without an account (player id {Id})", session.Id, entry.Key);
+            }
+        }
     }
 
     /// <summary>Relays a walk to the others on the map and moves the stored position of the online team members to the walker's.</summary>
@@ -568,15 +600,16 @@ public sealed class WorldState(
     /// <returns>The sessions.</returns>
     public IEnumerable<GameSession> OnlineSessions() => _online.Values;
 
-    /// <summary>The sessions of the online players other than one.</summary>
+    /// <summary>The sessions of the online players other than one, leaving out any session that lost its account or character.</summary>
     /// <param name="id">The player id to leave out.</param>
     /// <returns>The sessions.</returns>
-    private IEnumerable<GameSession> Others(int id) => _online.Where(kv => kv.Key != id).Select(kv => kv.Value);
+    private IEnumerable<GameSession> Others(int id) =>
+        _online.Where(kv => kv.Key != id && kv.Value is { Account: not null, ActiveCharacter: not null }).Select(kv => kv.Value);
 
     /// <summary>The player id of a session, which is its account's login id.</summary>
     /// <param name="session">The player's session.</param>
-    /// <returns>The player id.</returns>
-    private static int PlayerId(GameSession session) => session.Account!.LoginId;
+    /// <returns>The player id, or 0 (no player) when the session has no account.</returns>
+    private static int PlayerId(GameSession session) => session.Account?.LoginId ?? 0;
 
     /// <summary>Builds the record that shows a player to the others.</summary>
     /// <param name="session">The player's session.</param>
