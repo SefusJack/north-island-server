@@ -83,18 +83,9 @@ public sealed class GroundItems(
     }
 
     /// <summary>
-    /// Takes the thing at an index off the player's map: frees the index, queues a map thing to come back, and tells the
-    /// map to remove it.
-    /// </summary>
-    /// <param name="session">The player's session.</param>
-    /// <param name="index">The ground index.</param>
-    /// <returns>The thing, or null when the index is empty or invalid.</returns>
-    public GroundThing? Take(GameSession session, ushort index) => TakeIf(session, index, (_, _, _) => null, out _);
-
-    /// <summary>
-    /// Takes the thing at an index off the player's map when a check accepts it, as <see cref="Take"/> does. The check runs under the map's lock on
-    /// the very thing that is then taken, so a thing dropped into the freed index in between cannot be taken in its place. The check must be quick
-    /// and must not take other locks.
+    /// Takes the thing at an index off the player's map when a check accepts it: frees the index, queues a map thing to come back, and tells the
+    /// map to remove it. The check runs under the map's lock on the very thing that is then taken, so a thing dropped into the freed index in
+    /// between cannot be taken in its place. The check must be quick and must not take other locks.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="index">The ground index.</param>
