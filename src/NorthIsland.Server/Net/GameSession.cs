@@ -227,6 +227,41 @@ public sealed class GameSession : IAsyncDisposable
     /// <summary>Ends the outgoing queue; the writer then drains it and shuts the socket down.</summary>
     public void Close() => _outbox.Writer.TryComplete();
 
+    /// <summary>
+    /// Held while one piece of work changes the player's state: each incoming packet, and the timers that change the bag outside packets (a
+    /// manufacture finishing, a pet express or forage trip, a fish caught, a quiz prize, the vehicle drain). Without it a timer could change the
+    /// bag halfway through a packet handler, so that both pick the same free slot or send their bag packets in another order than they changed it.
+    /// </summary>
+    private readonly SemaphoreSlim _exclusive = new(1, 1);
+
+    /// <summary>Waits until no other work holds the player's state, then holds it until the result is disposed.</summary>
+    /// <returns>The hold; dispose it to let the next work in.</returns>
+    public async ValueTask<Exclusive> ExclusiveAsync()
+    {
+        await _exclusive.WaitAsync().ConfigureAwait(false);
+        return new Exclusive(_exclusive);
+    }
+
+    /// <summary>Holds the player's state when nothing else does, without waiting; for timers that can try again on their next tick.</summary>
+    /// <param name="held">The hold when taken; dispose it to let the next work in.</param>
+    /// <returns>True when the hold was taken.</returns>
+    public bool TryExclusive(out Exclusive held)
+    {
+        held = _exclusive.Wait(0) ? new Exclusive(_exclusive) : default;
+        return held.Held;
+    }
+
+    /// <summary>A hold on a session's state, from <see cref="ExclusiveAsync"/> or <see cref="TryExclusive"/>.</summary>
+    /// <param name="gate">The session's gate, or null for no hold.</param>
+    public readonly struct Exclusive(SemaphoreSlim? gate) : IDisposable
+    {
+        /// <summary>True when this holds the gate.</summary>
+        public bool Held => gate is not null;
+
+        /// <summary>Lets the next work in.</summary>
+        public void Dispose() => gate?.Release();
+    }
+
     /// <summary>Reads and dispatches packets until the client disconnects or the token is cancelled.</summary>
     /// <param name="ct">Stops the session.</param>
     public async Task RunAsync(CancellationToken ct)
