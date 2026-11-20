@@ -38,7 +38,10 @@ public sealed partial class BattleHandlers
         List<ActionTarget> targets = [];
         List<Fighter> healed = [];
         var firstSp = 0; // SP given to the first healed fighter
-        foreach (var f in battle.All.Where(f => f.IsHuman && f.IsAlive && !f.Left && f.Session is not null).ToList())
+        // Only a player in training, and that player's pet, is healed; someone on the island without a running voucher is not.
+        foreach (var f in battle.All
+                     .Where(f => f.IsHuman && f.IsAlive && !f.Left && f.Session?.ActiveCharacter is { } c && TrainingIslandHandlers.IsTraining(c))
+                     .ToList())
         {
             var hp = Math.Max(0, Math.Min(TrainingIslandRoundHp, f.MaxHp - f.Hp));
             var sp = Math.Max(0, Math.Min(TrainingIslandRoundSp, f.MaxSp - f.Sp));
