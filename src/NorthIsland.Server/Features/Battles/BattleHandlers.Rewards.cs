@@ -89,13 +89,14 @@ public sealed partial class BattleHandlers
         {
             if (itemId is not { } id || items[id] is not { } item)
                 continue;
-            List<(GameSession Session, int Added)> got = [];
+            List<(GameSession Session, List<(BagItem Item, byte Added)> Changes)> got = [];
             foreach (var mine in felling.GroupBy(f => f.Session!))
             {
                 var session = mine.Key;
                 var character = session.ActiveCharacter!;
                 var times = mine.Count() * (regular && TimedEffects.DoubleDrop(character, TimedEffects.Now) ? 2 : 1);
-                var added = Bag.Add(character, items, id, times).Sum(c => c.Added);
+                var changes = Bag.Add(character, items, id, times);
+                var added = changes.Sum(c => c.Added);
                 if (added == 0)
                 {
                     logger.LogInformation(
@@ -106,7 +107,7 @@ public sealed partial class BattleHandlers
                         monster.Name);
                     continue;
                 }
-                got.Add((session, added));
+                got.Add((session, changes));
                 logger.LogInformation(
                     "[{Session}] {Name} gets {Item} x{Count} from {Monster} in battle{Table}",
                     session.Id,
@@ -124,8 +125,8 @@ public sealed partial class BattleHandlers
                     monster.Row,
                     monster.Col,
                     felling.Where(f => got.Exists(g => ReferenceEquals(g.Session, f.Session))).Select(f => (f.Row, f.Col))));
-            foreach (var (session, added) in got)
-                session.Send(Protocol.Messages.Items.GroundMessages.ItemObtained(id, (ushort)added));
+            foreach (var (session, changes) in got)
+                Bag.SendObtained(session, items, id, changes);
             thrown = true;
         }
         return thrown;
@@ -345,10 +346,8 @@ public sealed partial class BattleHandlers
                 if (drop is not { } itemId || items[itemId] is null)
                     continue;
                 var times = share.Copies * (regular && TimedEffects.DoubleDrop(character, TimedEffects.Now) ? 2 : 1);
-                var added = Bag.Add(character, items, itemId, times).Sum(c => c.Added);
-                if (added == 0)
+                if (Bag.SendObtained(session, items, itemId, Bag.Add(character, items, itemId, times)) == 0)
                     continue;
-                session.Send(Protocol.Messages.Items.GroundMessages.ItemObtained(itemId, (ushort)added));
                 dropped.Add(items[itemId]!.Name + table);
             }
         }
