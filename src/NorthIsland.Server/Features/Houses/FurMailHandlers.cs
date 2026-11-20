@@ -21,6 +21,12 @@ public sealed class FurMailHandlers(
     /// <summary>The item id of the Mailbox.</summary>
     public const ushort Mailbox = 39084; // Mailbox
 
+    /// <summary>Longest letter text in characters, as the client's letter form allows (views/mail/FurMailWindow.xml).</summary>
+    public const int MaxText = 152;
+
+    /// <summary>The most letters a box keeps for a character when <see cref="HouseLifeOptions.FurMailCapacity"/> is 0 (no limit set).</summary>
+    public const int DefaultCapacity = 100;
+
     /// <summary>Whether a character has a Mailbox placed.</summary>
     /// <param name="c">The character.</param>
     /// <returns>True when a Mailbox piece is among their furniture.</returns>
@@ -44,7 +50,10 @@ public sealed class FurMailHandlers(
         c.FurMails.Clear();
     }
 
-    /// <summary>Handles <c>14/6</c>: sends a letter to the named character, either to their session or into their box.</summary>
+    /// <summary>
+    /// Handles <c>14/6</c>: sends a letter to the named character, either to their session when it is the character being played or into their
+    /// box. The text is capped at the client's length, the session must have waited the friend mail's wait, and a full box refuses it.
+    /// </summary>
     /// <param name="session">The sender's session.</param>
     /// <param name="body">The sender id (four bytes), the length of the name, the name, then the letter text.</param>
     internal async ValueTask OnLetter(GameSession session, ReadOnlyMemory<byte> body)
@@ -69,11 +78,18 @@ public sealed class FurMailHandlers(
             session.Send(FurMailMessages.Result(1));
             return;
         }
+        if (text.Length > MaxText || !FriendHandlers.TakeMailTurn(session))
+        {
+            logger.LogWarning("[{Session}] {Name}: letter to {Target} refused ({Length} characters, or too soon)", session.Id, c.Name, name, text.Length);
+            session.Send(FurMailMessages.Result(1));
+            return;
+        }
         var targetId = target.Account.LoginId;
         var time = GameClock.Now.ToOADate();
-        if (world.SessionOf(targetId) is { } online && online.ActiveCharacter is { } onlineCharacter)
+        var online = world.SessionOf(targetId);
+        if (online is not null && ReferenceEquals(online.ActiveCharacter, target.Character))
         {
-            if (BlocklistHandlers.Blocks(onlineCharacter, myId))
+            if (BlocklistHandlers.Blocks(target.Character, myId))
             {
                 BlocklistHandlers.Refuse(session, 2); // action
                 return;
@@ -87,14 +103,15 @@ public sealed class FurMailHandlers(
                 BlocklistHandlers.Refuse(session, 2); // action
                 return;
             }
-            var capacity = options.Value.HouseLife.FurMailCapacity;
-            if (capacity > 0 && target.Character.FurMails.Count >= capacity)
+            var capacity = options.Value.HouseLife.FurMailCapacity is > 0 and var set ? set : DefaultCapacity;
+            if (target.Character.FurMails.Count >= capacity)
             {
                 session.Send(new PacketWriter(Action14.Code, Action14.MailboxFull).ToArray());
                 return;
             }
             target.Character.FurMails.Add(new FurMail { SenderId = myId, SenderName = c.Name, Time = time, Text = text });
-            await store.SaveAsync(target.Account).ConfigureAwait(false);
+            if (online is null)
+                await store.SaveAsync(target.Account).ConfigureAwait(false);
         }
         session.Send(FurMailMessages.Result(3)); // result
         logger.LogInformation("[{Session}] {Name} leaves a letter in {Target}'s mailbox: {Text}", session.Id, c.Name, target.Character.Name, text);
