@@ -120,10 +120,11 @@ public sealed class ManufactureHandlers(
             takeBag.Add((stack, take));
             need[stack.ItemId] = left - take;
         }
+        // The station itself may be a material: the Wit Maid is made at a Maid Robot and uses that robot up.
         var takeFurn = new List<Furniture>();
         foreach (var index in furnParts.Distinct())
         {
-            var piece = character.Furniture.Find(f => f.Index == index && f.Index != furnIndex && f.Parent == 0);
+            var piece = character.Furniture.Find(f => f.Index == index && f.Parent == 0);
             if (piece is null || !need.TryGetValue(piece.ItemId, out var left) || left == 0 || character.Furniture.Exists(f => f.Parent == index))
                 continue;
             takeFurn.Add(piece);
