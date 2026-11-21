@@ -90,24 +90,25 @@ public sealed partial class BattleHandlers
     /// <summary>Ends the battle when one side is down.</summary>
     /// <param name="session">The session used for logging and for ending the battle.</param>
     /// <param name="battle">The battle.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
     /// <returns>True when the battle ended.</returns>
-    private bool TryFinish(GameSession session, Battle battle)
+    private bool TryFinish(GameSession session, Battle battle, GameSession? holder = null)
     {
         if (battle.IsPvp)
         {
             if (!battle.SideDown(1) && !battle.SideDown(2))
                 return false;
-            EndPvp(session, battle, winner: battle.SideDown(1) ? (byte)2 : (byte)1);
+            EndPvp(session, battle, winner: battle.SideDown(1) ? (byte)2 : (byte)1, holder);
             return true;
         }
         if (battle.AllMonstersDown)
         {
-            Win(session, battle);
+            Win(session, battle, holder: holder);
             return true;
         }
         if (battle.AllPlayersDown)
         {
-            Lose(session, battle);
+            Lose(session, battle, holder);
             return true;
         }
         return false;

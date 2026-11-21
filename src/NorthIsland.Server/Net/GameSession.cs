@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -98,6 +99,15 @@ public sealed class GameSession : IAsyncDisposable
 
     /// <summary>True once the session is closing: the router drops its packets and nothing more is sent.</summary>
     public bool Closing => Volatile.Read(ref _closing) != 0;
+
+    /// <summary>1 once the disconnect cleanup began under the session's gate (<see cref="MarkEnded"/>); 0 before.</summary>
+    private int _cleaningUp;
+
+    /// <summary>
+    /// True once the disconnect cleanup began under the session's gate: the character is saved for the last time and must not change any more,
+    /// except by the cleanup itself. A session closed by another session (a kick) is <see cref="Closing"/> but not cleaning up until then.
+    /// </summary>
+    public bool CleaningUp => Volatile.Read(ref _cleaningUp) != 0;
 
     /// <summary>
     /// Limits the session's problem log lines: its bad packets (unhandled, malformed, failed, junk skipped) and the refusals that a client can
@@ -378,10 +388,102 @@ public sealed class GameSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// Marks the session closing once its connection ended, so that later work of other sessions leaves its state alone; called under its gate
-    /// before the disconnect cleanup and the final save.
+    /// Takes this session's gate without waiting, for work that may hold another session's gate or none and cannot tell which (see <see
+    /// cref="HandOver"/>).
     /// </summary>
-    internal void MarkEnded() => Volatile.Write(ref _closing, 1);
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell.</param>
+    /// <param name="held">The hold when taken (none when <paramref name="holder"/> is this session); dispose it to let the next work in.</param>
+    /// <returns>
+    /// True when the caller may change this session's state now: it holds the gate already (<paramref name="holder"/> is this session, also
+    /// during the disconnect cleanup), or the gate was free and the disconnect cleanup has not begun (<see cref="CleaningUp"/>).
+    /// </returns>
+    public bool TryExclusiveNow(GameSession? holder, out Exclusive held)
+    {
+        held = default;
+        if (ReferenceEquals(holder, this)) // the caller already holds this gate, which is not reentrant
+            return true;
+        if (!TryExclusive(out held))
+            return false;
+        if (!CleaningUp)
+            return true;
+        held.Dispose();
+        held = default;
+        return false;
+    }
+
+    /// <summary>The work handed over by <see cref="HandOver"/> that waits for this session's gate, in the order it was handed over.</summary>
+    private readonly ConcurrentQueue<(string What, Action Work)> _handedOver = new();
+
+    /// <summary>
+    /// Changes this player's state from work that must not be refused and cannot wait for this session's gate, as it may hold another session's
+    /// gate or none (a battle settling: its experience, drops, gold, caught pets and exit for each player). The work runs at once when <see
+    /// cref="TryExclusiveNow"/> allows it; otherwise it waits in a queue, in order, for the next holder of the gate: the session's next packet, a
+    /// task that holds no gate and waits for it (the rule of <see cref="TryExclusiveFrom"/>), or the disconnect cleanup, which runs it before the
+    /// final save (<see cref="MarkEnded"/>). Work that still waits once the character was saved for the last time is dropped with a log line.
+    /// </summary>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell.</param>
+    /// <param name="what">What the work does, for the log.</param>
+    /// <param name="work">The change, run under this session's gate.</param>
+    public void HandOver(GameSession? holder, string what, Action work)
+    {
+        _handedOver.Enqueue((what, work));
+        if (TryExclusiveNow(holder, out var held))
+        {
+            using (held)
+                RunHandedOver();
+            return;
+        }
+        _ = Task.Run(RunHandedOverAsync);
+    }
+
+    /// <summary>
+    /// Runs the handed-over work, in order; the caller holds this session's gate. A work that throws is logged and the next one runs.
+    /// </summary>
+    internal void RunHandedOver()
+    {
+        while (_handedOver.TryDequeue(out var item))
+        {
+            try
+            {
+                item.Work();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[{Session}] handed-over work '{What}' failed", Id, item.What);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits for this session's gate, holding no other, and runs the handed-over work; drops it with a log line when the disconnect cleanup
+    /// ran meanwhile and saved the character for the last time (<see cref="CleaningUp"/>). A session that is only closing is still saved after
+    /// this.
+    /// </summary>
+    private async Task RunHandedOverAsync()
+    {
+        using (await ExclusiveAsync().ConfigureAwait(false))
+        {
+            if (!CleaningUp)
+            {
+                RunHandedOver();
+                return;
+            }
+            while (_handedOver.TryDequeue(out var item))
+                _logger.LogWarning("[{Session}] '{What}' not done: the connection ended and the character was saved for the last time", Id,
+                    item.What);
+        }
+    }
+
+    /// <summary>
+    /// Marks the session closing once its connection ended, so that later work of other sessions leaves its state alone; called under its gate
+    /// before the disconnect cleanup and the final save. The work handed over to it (<see cref="HandOver"/>) runs first, so that it is saved.
+    /// </summary>
+    internal void MarkEnded()
+    {
+        RunHandedOver();
+        Volatile.Write(ref _cleaningUp, 1);
+        Volatile.Write(ref _closing, 1);
+    }
 
     /// <summary>A hold on a session's state, from <see cref="ExclusiveAsync"/> or <see cref="TryExclusive"/>.</summary>
     /// <param name="gate">The session's gate, or null for no hold.</param>

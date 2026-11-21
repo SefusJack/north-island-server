@@ -87,7 +87,8 @@ public sealed class PacketRouter(
 
     /// <summary>
     /// Finds the handler of a packet and runs it, sending the clear packets when it fails, is malformed or stays silent. Drops the packet of a
-    /// session that is closing, also when the close came while the packet waited for the session's gate.
+    /// session that is closing, also when the close came while the packet waited for the session's gate. Under the gate, first runs the work
+    /// handed over to the session (<see cref="GameSession.HandOver"/>).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="payload">The packet: action, sub code and body.</param>
@@ -122,6 +123,7 @@ public sealed class PacketRouter(
         using var exclusive = await session.ExclusiveAsync().ConfigureAwait(false); // timers that change the bag wait for the packet to be handled
         if (session.Closing)
             return;
+        session.RunHandedOver(); // a battle's settlement handed over while the gate was busy comes before the packet
         var sent = session.BeginDispatch();
         try
         {

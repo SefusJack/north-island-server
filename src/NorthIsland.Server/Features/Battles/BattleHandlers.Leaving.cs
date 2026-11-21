@@ -14,26 +14,28 @@ public sealed partial class BattleHandlers
     /// <param name="player">The player fighter who leaves.</param>
     /// <param name="how">Text for the log that says why they left.</param>
     /// <param name="fled">True when they ran off, which matters for what happens to a monster that started the battle.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
     /// <returns>True when the battle ended.</returns>
     private bool LeaveWithTeam(
         GameSession session,
         Battle battle,
         Fighter player,
         string how,
-        bool fled = true)
+        bool fled = true,
+        GameSession? holder = null)
     {
         List<Fighter> leaving = [player, .. TeamFollowers(battle, player)];
         leaving.AddRange(JoinersOf(battle, player).Where(j => !leaving.Contains(j)));
         if (!battle.IsPvp && battle.ActivePlayers.All(leaving.Contains))
         {
-            End(session, battle, BattleOutcome.Lost, how, fled);
+            End(session, battle, BattleOutcome.Lost, how, fled, holder);
             return true;
         }
         foreach (var leaver in leaving)
-            Leave(session, battle, leaver, BattleOutcome.Lost, alsoTell: true);
+            Leave(session, battle, leaver, BattleOutcome.Lost, alsoTell: true, holder);
         if (leaving.Count > 1)
             logger.LogInformation("[{Session}] {Name} led {Count} team member(s) out of the battle", session.Id, player.Name, leaving.Count - 1);
-        return battle.IsPvp && TryFinish(session, battle);
+        return battle.IsPvp && TryFinish(session, battle, holder);
     }
 
     /// <summary>
@@ -55,7 +57,8 @@ public sealed partial class BattleHandlers
         lock (battle.Lock)
         {
             logger.LogInformation("[{Session}] {Name} leaves the game in battle {Index}", session.Id, player.Name, battle.EventBattleIndex);
-            if (LeaveWithTeam(session, battle, player, "left the game", fled: false))
+            // the disconnect cleanup holds the player's gate once it began (CleaningUp); a kick from another player's packet does not
+            if (LeaveWithTeam(session, battle, player, "left the game", fled: false, holder: session.CleaningUp ? session : null))
                 return;
             if (battle.Phase == BattlePhase.Command && !battle.AwaitsCommands && battle.ActivePlayers.FirstOrDefault()?.Session is { } other)
             {
@@ -112,15 +115,17 @@ public sealed partial class BattleHandlers
     /// <param name="outcome">How the battle ended for the players.</param>
     /// <param name="how">Text for the log that says why it ended.</param>
     /// <param name="fled">True when the players fled.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
     private void End(
         GameSession session,
         Battle battle,
         BattleOutcome outcome,
         string how,
-        bool fled = false)
+        bool fled = false,
+        GameSession? holder = null)
     {
         if (TryClaimEnd(battle))
-            Close(session, battle, outcome, how, fled);
+            Close(session, battle, outcome, how, fled, holder);
     }
 
     /// <summary>Marks a battle over, once: of several near-simultaneous ends, only the first goes on to settle the battle.</summary>
@@ -139,24 +144,27 @@ public sealed partial class BattleHandlers
 
     /// <summary>
     /// Settles a battle its caller marked over with <see cref="TryClaimEnd"/>: gives out the drops, takes every player out, stops the
-    /// watchers, answers the joins that wait for it and handles the monster that started it.
+    /// watchers, answers the joins that wait for it and handles the monster that started it. The drops and each player's exit change the
+    /// player under their own gate (<see cref="GameSession.HandOver"/>).
     /// </summary>
     /// <param name="session">The session used for logging.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="outcome">How the battle ended for the players.</param>
     /// <param name="how">Text for the log that says why it ended.</param>
     /// <param name="fled">True when the players fled.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
     private void Close(
         GameSession session,
         Battle battle,
         BattleOutcome outcome,
         string how,
-        bool fled = false)
+        bool fled = false,
+        GameSession? holder = null)
     {
         foreach (var monster in battle.Monsters.ToList())
-            GiveDropInBattle(battle, monster);
+            GiveDropInBattle(battle, monster, holder);
         foreach (var player in battle.ActivePlayers.ToList())
-            Leave(session, battle, player, outcome, alsoTell: false);
+            Leave(session, battle, player, outcome, alsoTell: false, holder);
         List<GameSession> watchers;
         lock (battle.Watchers)
             watchers = [.. battle.Watchers];
@@ -170,19 +178,22 @@ public sealed partial class BattleHandlers
 
     /// <summary>
     /// Takes one player and their pet out of the battle and settles what the battle cost or gave them, once per player: a later call for the
-    /// same player does nothing.
+    /// same player does nothing. The battle sees them gone at once; the changes to the player (their exit, the losses, HP, SP and wear, the
+    /// caught pets) run under the player's gate (<see cref="GameSession.HandOver"/>), as this may run under another player's gate or none.
     /// </summary>
     /// <param name="logSession">The session used for logging.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="player">The player fighter who leaves.</param>
     /// <param name="outcome">How the battle ended for them.</param>
     /// <param name="alsoTell">True to tell the others in the battle that they ran off.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
     private void Leave(
         GameSession logSession,
         Battle battle,
         Fighter player,
         BattleOutcome outcome,
-        bool alsoTell)
+        bool alsoTell,
+        GameSession? holder = null)
     {
         lock (battle.Lock)
         {
@@ -192,12 +203,42 @@ public sealed partial class BattleHandlers
         }
         var pet = battle.PetOf(player);
         var session = player.Session;
-        if (session is null)
+        var petOnField = pet is { IsAlive: true, Left: false };
+        if (session is not null && alsoTell)
         {
-            player.Left = true;
-            pet?.Left = true;
-            return;
+            if (petOnField)
+                battle.Send(BattleMessages.FighterLeave(pet!.Row, pet.Col), except: session); // the player's own client is told in Settle
+            battle.Send(BattleMessages.PlayerLeft(player.Id), except: session);
         }
+        player.Left = true;
+        pet?.Left = true;
+        if (session is null)
+            return;
+        // what Settle reads of the battle, taken now: the others still fight on, catch and get reinforcements meanwhile
+        var settling = new Settling(
+            player,
+            pet,
+            petOnField,
+            ReferenceEquals(player, battle.Player),
+            [.. battle.FallenPetsOf(player)],
+            [.. battle.Caught.Where(c => ReferenceEquals(c.Catcher, player)).Select(c => c.Npc)],
+            battle.Monsters.Select(m => (int)m.Level).DefaultIfEmpty(0).Max());
+        session.HandOver(holder, "battle exit", () => Settle(session, battle, settling, outcome));
+        if (alsoTell)
+            logger.LogInformation("[{Session}] {Name} runs off; the others fight on", logSession.Id, player.Name);
+    }
+
+    /// <summary>
+    /// Settles a player's leaving under the player's gate: takes them out of the battle on their client, takes what the battle cost (Toy
+    /// Puppet, experience, fallen pets) and gives the HP, SP, wear and caught pets.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="battle">The battle.</param>
+    /// <param name="settling">What the battle left the player with, taken when they left.</param>
+    /// <param name="outcome">How the battle ended for them.</param>
+    private void Settle(GameSession session, Battle battle, Settling settling, BattleOutcome outcome)
+    {
+        var (player, pet, petOnField, starter, fallenBefore, caughtNpcs, highest) = settling;
         if (ReferenceEquals(session.Battle, battle))
             session.Battle = null;
         session.Encounters.NoBattleBefore = GameClock.UtcNow.AddSeconds(options.Value.BattleImmunitySeconds);
@@ -207,7 +248,7 @@ public sealed partial class BattleHandlers
             SendFightState(session, 0, skip: null);
 
         // the pet on the field when it is down, and every pet that fell earlier and was taken off the field for another
-        List<Fighter> fallenPets = [.. battle.FallenPetsOf(player)];
+        List<Fighter> fallenPets = [.. fallenBefore];
         if (pet is { IsAlive: false })
             fallenPets.Add(pet);
         var deathCosts = !UseToyPuppet(session, player, fallenPets);
@@ -221,20 +262,10 @@ public sealed partial class BattleHandlers
                 ranAway.Add(fallen);
         }
 
-        if (pet is { IsAlive: true, Left: false })
-        {
-            var petLeaves = BattleMessages.FighterLeave(pet.Row, pet.Col);
-            if (alsoTell)
-                battle.Send(petLeaves);
-            else
-                session.Send(petLeaves);
-        }
-        if (alsoTell)
-            battle.Send(BattleMessages.PlayerLeft(player.Id), except: session);
+        if (petOnField)
+            session.Send(BattleMessages.FighterLeave(pet!.Row, pet.Col));
         session.Send(BattleMessages.FighterLeave(player.Row, player.Col));
-        player.Left = true;
-        pet?.Left = true;
-        if (ReferenceEquals(player, battle.Player) && session.Event is { } run)
+        if (starter && session.Event is { } run)
             run.BattleOutcome = outcome;
         TrojanRoundWon(session, battle, player, outcome);
 
@@ -245,12 +276,11 @@ public sealed partial class BattleHandlers
             session.Send(InnMessages.SetAttribute(Action8.AttrHp, character.Hp));
             session.Send(InnMessages.SetAttribute(Action8.AttrSp, character.Sp));
             var wear = itemOptions.Value.Durability;
-            var highest = battle.Monsters.Select(m => (int)m.Level).DefaultIfEmpty(0).Max();
             var playerGap = Durability.Wears(character.Level, highest, wear.WearMinLevelGap);
             var petGap = pet?.OwnedPet is { } fighting && Durability.Wears(fighting.Level, highest, wear.WearMinLevelGap);
             Durability.AfterBattle(session.Send, character, pet?.OwnedPet, (e, onPet) => Durability.WearOf(items[e.ItemId], onPet ? petGap : playerGap, wear));
 
-            foreach (var petFighter in pet is null ? battle.FallenPetsOf(player) : battle.FallenPetsOf(player).Append(pet))
+            foreach (var petFighter in pet is null ? fallenBefore : fallenBefore.Append(pet))
             {
                 if (petFighter.OwnedPet is not { } fought)
                     continue;
@@ -260,7 +290,7 @@ public sealed partial class BattleHandlers
                 session.Send(PetMessages.SetAttribute(fought.Slot, Action8.AttrSp, fought.Sp));
             }
 
-            foreach (var (_, npc) in battle.Caught.Where(c => ReferenceEquals(c.Catcher, player)))
+            foreach (var npc in caughtNpcs)
             {
                 var slot = Pets.FreeSlot(character);
                 if (slot == 0)
@@ -285,10 +315,25 @@ public sealed partial class BattleHandlers
                 runaway.Amity,
                 runaway.Equipment.Count);
         }
-        if (alsoTell)
-            logger.LogInformation("[{Session}] {Name} runs off; the others fight on", logSession.Id, player.Name);
         instances.AfterBattle(session); // an instance that ended during the fight sends its player out now
     }
+
+    /// <summary>What a player who leaves a battle is settled with, taken from the battle when they leave.</summary>
+    /// <param name="Player">The player fighter.</param>
+    /// <param name="Pet">The player's pet fighter on the field, or null.</param>
+    /// <param name="PetOnField">True when the pet was standing on the field.</param>
+    /// <param name="Starter">True when the player started the battle.</param>
+    /// <param name="FallenPets">The player's pets that fell earlier and were taken off the field for another.</param>
+    /// <param name="CaughtNpcs">The monsters the player caught.</param>
+    /// <param name="HighestMonsterLevel">The highest monster level in the battle, for the gear's wear; 0 without monsters.</param>
+    private sealed record Settling(
+        Fighter Player,
+        Fighter? Pet,
+        bool PetOnField,
+        bool Starter,
+        List<Fighter> FallenPets,
+        List<NorthIsland.GameData.Npcs.NpcRecord> CaughtNpcs,
+        int HighestMonsterLevel);
 
     /// <summary>Takes what a pet's fall in the battle costs: amity and experience, and rolls whether it runs away.</summary>
     /// <param name="session">The owner's session.</param>

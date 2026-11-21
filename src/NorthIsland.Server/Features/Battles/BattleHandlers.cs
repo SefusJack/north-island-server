@@ -484,7 +484,8 @@ public sealed partial class BattleHandlers(
     /// <param name="session">The session the end is reported for.</param>
     /// <param name="battle">The battle.</param>
     /// <param name="winner">The winning side.</param>
-    private void EndPvp(GameSession session, Battle battle, byte winner)
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none or cannot tell (the round's play).</param>
+    private void EndPvp(GameSession session, Battle battle, byte winner, GameSession? holder = null)
     {
         if (!TryClaimEnd(battle))
             return;
@@ -492,16 +493,20 @@ public sealed partial class BattleHandlers(
         foreach (var p in battle.Players.Where(p => p.Side == winner))
         {
             rankings.AddPkWin(p.Id, p.Name);
-            if (p.Session?.ActiveCharacter is { } winnerCharacter)
+            if (p.Session is not { } winnerSession)
+                continue;
+            winnerSession.HandOver(holder, "PK win", () =>
             {
+                if (winnerSession.ActiveCharacter is not { } winnerCharacter)
+                    return;
                 winnerCharacter.PvpWins = (ushort)Math.Min(ushort.MaxValue, winnerCharacter.PvpWins + 1);
                 var wins = new PacketWriter(Action37.Code, Action37.PvpVictories).I32(p.Id).U16(winnerCharacter.PvpWins).ToArray();
-                p.Session.Send(wins);
-                world.Broadcast(p.Session, wins, sameMapOnly: false);
-            }
+                winnerSession.Send(wins);
+                world.Broadcast(winnerSession, wins, sameMapOnly: false);
+            });
         }
         UpdatePvpRanks();
-        Close(session, battle, BattleOutcome.Won, $"PK won by {winners}");
+        Close(session, battle, BattleOutcome.Won, $"PK won by {winners}", holder: holder);
     }
 
     /// <summary>Gives the top three PK winners rank 1 to 3 and tells everyone online whose rank changed.</summary>
@@ -600,7 +605,7 @@ public sealed partial class BattleHandlers(
             return ValueTask.CompletedTask;
         }
         UseLimit.Spend(session, character, stack, item);
-        LeaveWithTeam(session, battle, player, "escape button");
+        LeaveWithTeam(session, battle, player, "escape button", holder: session);
         return ValueTask.CompletedTask;
     }
 
@@ -629,7 +634,7 @@ public sealed partial class BattleHandlers(
         if (stack.Count == 0)
             character.Bag.Remove(stack);
         logger.LogInformation("[{Session}] {Name} wins the battle with a Win Plate", session.Id, character.Name);
-        Win(session, battle, winPlate: battle.ActivePlayers.FirstOrDefault(p => ReferenceEquals(p.Session, session)));
+        Win(session, battle, winPlate: battle.ActivePlayers.FirstOrDefault(p => ReferenceEquals(p.Session, session)), holder: session);
         return ValueTask.CompletedTask;
     }
 
