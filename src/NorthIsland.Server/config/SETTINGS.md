@@ -508,12 +508,20 @@ of 10,000, big bag weights out of 1,000):
 | Bag | Rows |
 |---|---|
 | Common, themed | 3 foods (5 each, pizzas 2) or Wishing Coins (820 each, 24.6%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (350 each, 14%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
-| Common, fixed | Carnie Token ×3 (810, 8.1%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); Demon Scroll ×3 and Principality Scroll ×3 (400 each, 4%); Archangel Scroll ×2 (250, 2.5%), Virtues Scroll ×2 (200, 2%), Small Demon Scroll (150, 1.5%); Black Diamond +20 (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); Ofanim Scroll (100, 1%), Cherubim Scroll (60, 0.6%); Shining Diamond +22 (80, 0.8%); Seraph Scroll and Nimbus Diamond +24 (15 each, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
-| Big, themed | 4 rares (70 each, 28%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
-| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); Virtues Scroll ×3 and Ofanim Scroll ×2 (60 each, 6%), Cherubim Scroll ×2 (50, 5%), Seraph Scroll ×2 (30, 3%); Pink Diamond +26 (50, 5%), Golden +28 (40, 4%), Orange +30 (30, 3%), Grass +32 (15, 1.5%), Blove +36 (10, 1%), Death +40 (3, 0.3%); a Silver Card (35, 3.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
+| Common, fixed | Carnie Token ×3 (810, 8.1%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); Demon Scroll ×3 and Principality Scroll ×3 (400 each, 4%); Archangel Scroll ×2 (250, 2.5%), Virtues Scroll ×2 (200, 2%), Small Demon Scroll (150, 1.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); Ofanim Scroll (100, 1%), Cherubim Scroll (60, 0.6%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
+| Big, themed | 4 rares (90 each, 36%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
+| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); Virtues Scroll ×3 and Ofanim Scroll ×2 (60 each, 6%), Cherubim Scroll ×2 (50, 5%), Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (35, 3.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
 
 At 20 kills a minute that is about 1.2 Alchemy Book 1s, 1 Book 2, 0.8 Book 3s and 0.6 Book 4s an hour, a
-Strong Scroll or a Pet Lethe Scroll every 3 hours, a Seraph Scroll every 22 hours and a Black Diamond every 3 hours.
+Strong Scroll or a Pet Lethe Scroll every 3 hours, a Seraph Scroll every 22 hours and the event's uncommon diamond every 3
+hours. Each event has one diamond of each rarity, and the events take turns through each rarity's range:
+
+| Rarity | Diamonds | Events |
+|---|---|---|
+| Uncommon (common bag) | Black +20, Shining +22, Nimbus +24 | Black: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Shining: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Nimbus: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
+| Rare (both bags) | Pink +26, Golden +28, Orange +30, Grass +32 | Pink: Winter Festival, White Day, Summer, Thanksgiving; Golden: Chinese New Year, Spring Festival, Artisan Festival, Christmas; Orange: Valentine's Day, Anniversary, Mid-Autumn Festival, New Year; Grass: Lantern Festival, Dragon Boat Festival, Halloween |
+| Jackpot (both bags) | Sanguine +34, Blove +36, Sky +38, Death +40 | Sanguine: Winter Festival, White Day, Summer, Thanksgiving; Blove: Chinese New Year, Spring Festival, Artisan Festival, Christmas; Sky: Valentine's Day, Anniversary, Mid-Autumn Festival, New Year; Death: Lantern Festival, Dragon Boat Festival, Halloween |
+| Top prize (big bag) | Fairy +42, Purple +44, Star +46 | Fairy: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Purple: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Star: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
 Travel items aren't prizes (Bamboo Dragonfly, Teleport Scroll, GPS, Memory Crystal, also taken out of the War Pack, the
 Scroll Pack and the Thanksgiving Egg in `Data/MallBoxes.tsv`); the Yacht Voucher is only a top prize.
 
