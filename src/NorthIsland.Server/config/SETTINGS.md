@@ -507,10 +507,10 @@ of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common, themed | 3 foods (5 each, pizzas 2) or Wishing Coins (820 each, 24.6%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (350 each, 14%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
-| Common, fixed | Carnie Token ×3 (810, 8.1%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); Demon Scroll ×3 and Principality Scroll ×3 (400 each, 4%); Archangel Scroll ×2 (250, 2.5%), Virtues Scroll ×2 (200, 2%), Small Demon Scroll (150, 1.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); Ofanim Scroll (100, 1%), Cherubim Scroll (60, 0.6%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
-| Big, themed | 4 rares (90 each, 36%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
-| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); Virtues Scroll ×3 and Ofanim Scroll ×2 (60 each, 6%), Cherubim Scroll ×2 (50, 5%), Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (35, 3.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
+| Common, themed | 3 foods (5 each, pizzas 2) or Wishing Coins (1100 each, 33%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
+| Common, fixed | Carnie Token ×3 (1000, 10%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); the event's common forging scroll ×3 (400, 4%) and uncommon forging scroll ×2, Small Demon ×1 (250, 2.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); the event's rare forging scroll (100, 1%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (195, 1.95%), a Silver Card (75, 0.75%) and a Golden Card (5, 0.05%) |
+| Big, themed | 4 rares (100 each, 40%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
+| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); the event's uncommon forging scroll ×3, Small Demon ×2 (60, 6%), its rare forging scroll ×2 (60, 6%) and Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (45, 4.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
 
 At 20 kills a minute that is about 1.2 Alchemy Book 1s, 1 Book 2, 0.8 Book 3s and 0.6 Book 4s an hour, a
 Strong Scroll or a Pet Lethe Scroll every 3 hours, a Seraph Scroll every 22 hours and the event's uncommon diamond every 3
@@ -522,6 +522,15 @@ hours. Each event has one diamond of each rarity, and the events take turns thro
 | Rare (both bags) | Pink +26, Golden +28, Orange +30, Grass +32 | Pink: Winter Festival, White Day, Summer, Thanksgiving; Golden: Chinese New Year, Spring Festival, Artisan Festival, Christmas; Orange: Valentine's Day, Anniversary, Mid-Autumn Festival, New Year; Grass: Lantern Festival, Dragon Boat Festival, Halloween |
 | Jackpot (both bags) | Sanguine +34, Blove +36, Sky +38, Death +40 | Sanguine: Winter Festival, White Day, Summer, Thanksgiving; Blove: Chinese New Year, Spring Festival, Artisan Festival, Christmas; Sky: Valentine's Day, Anniversary, Mid-Autumn Festival, New Year; Death: Lantern Festival, Dragon Boat Festival, Halloween |
 | Top prize (big bag) | Fairy +42, Purple +44, Star +46 | Fairy: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Purple: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Star: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
+
+The forging scrolls work the same way: each event has one scroll of each rarity, and the Seraph Scroll (100%) is every
+event's jackpot scroll.
+
+| Rarity | Scrolls | Events |
+|---|---|---|
+| Common (common bag ×3) | Demon 50%, Principality 60% | Demon: Winter Festival, Valentine's Day, White Day, Anniversary, Summer, Mid-Autumn Festival, Thanksgiving, New Year; Principality: Chinese New Year, Lantern Festival, Spring Festival, Dragon Boat Festival, Artisan Festival, Halloween, Christmas |
+| Uncommon (common bag ×2, big bag ×3) | Archangel 65%, Virtues 70%, Small Demon 50% for +4 (×1 and ×2) | Archangel: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Virtues: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Small Demon: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
+| Rare (common bag ×1, big bag ×2) | Ofanim 80%, Cherubim 90% | Ofanim: Winter Festival, Chinese New Year, White Day, Spring Festival, Summer, Artisan Festival, Thanksgiving, Christmas; Cherubim: Valentine's Day, Lantern Festival, Anniversary, Dragon Boat Festival, Mid-Autumn Festival, Halloween, New Year |
 Travel items aren't prizes (Bamboo Dragonfly, Teleport Scroll, GPS, Memory Crystal, also taken out of the War Pack, the
 Scroll Pack and the Thanksgiving Egg in `Data/MallBoxes.tsv`); the Yacht Voucher is only a top prize.
 
@@ -538,9 +547,10 @@ the big bags. Holiday items fill only their own event's bags.
 | Golden Card (50019) | the 22 jackpots |
 | Free Card (50000) | the 12 top prizes |
 
-At 20 kills a minute that is about 1.2 Bronze Cards and 0.6 Silver Cards an hour. Outside its own event, getting a
-chosen prize takes about 1.5 to 5 times as many monsters as during it (about 1 in 1,000 kills for an uncommon, 2,000 for a
-rare, 80,000 for a jackpot and 1,600,000 for a top prize, against 410, 1,400, 28,000 and 320,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
+A choice card is at most half as likely as the most likely row of its tier in the same bag. At 20 kills a minute that is
+about 0.4 Bronze Cards and 0.16 Silver Cards an hour. Outside its own event, getting a chosen prize takes about 2.5 to 6.5
+times as many monsters as during it (about 1 in 3,100 kills for an uncommon, 7,400 for a rare, 80,000 for a jackpot and
+1,600,000 for a top prize, against 470, 2,700, 18,000 and 320,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
 
 The mall's real boxes are prizes too (Gift Pack, War Pack, Scroll Pack, Gear Pack with the pet gear, Transferred Pack,
 Water Pack, Maid Box, Crystal Ice Cube, Super Gift Box, Friendship Pumpkin, Thanksgiving Egg, 2010 Jolly Pack, Anniversary
