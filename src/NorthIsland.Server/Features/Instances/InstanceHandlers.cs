@@ -585,8 +585,8 @@ public sealed class InstanceHandlers(
         {
             if (instance.Member(Id(session)) is null)
             {
-                logger.LogWarning("[{Session}] {Name}: goal {Goal} of instance {Map} not defined: no member", session.Id, session.ActiveCharacter?.Name,
-                    goal, instance.MapId);
+                logger.LogWarning("[{Session}] {Name}: goal {Goal} of instance {Map} not defined: no member", session.Id,
+                    session.ActiveCharacter?.Name, goal, instance.MapId);
                 return;
             }
             instance.Definitions[goal] = (npcId, needed);
