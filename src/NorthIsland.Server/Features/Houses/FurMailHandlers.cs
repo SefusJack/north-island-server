@@ -16,7 +16,7 @@ public sealed class FurMailHandlers(
     IAccountStore store,
     WorldState world,
     IOptions<HouseOptions> options,
-    ILogger<FurMailHandlers> logger)
+    ILogger<FurMailHandlers> logger) : IDisposable
 {
     /// <summary>The item id of the Mailbox.</summary>
     public const ushort Mailbox = 39084; // Mailbox
@@ -26,6 +26,15 @@ public sealed class FurMailHandlers(
 
     /// <summary>The most letters a box keeps for a character when <see cref="HouseLifeOptions.FurMailCapacity"/> is 0 or less.</summary>
     public const int DefaultCapacity = 100;
+
+    /// <summary>
+    /// Held while a letter goes into the box of a character who is offline and their account is saved. Their senders hold no gate of theirs, so
+    /// this keeps two of them from filling the box at once, or one from adding a letter while the save of another writes the box.
+    /// </summary>
+    private readonly SemaphoreSlim _offlineBoxes = new(1, 1);
+
+    /// <summary>Lets go of <see cref="_offlineBoxes"/>; called by the service container when the server stops.</summary>
+    public void Dispose() => _offlineBoxes.Dispose();
 
     /// <summary>Whether a character has a Mailbox placed.</summary>
     /// <param name="c">The character.</param>
@@ -45,9 +54,14 @@ public sealed class FurMailHandlers(
     {
         if (HasMailbox(c))
             SendState(session, c);
-        foreach (var letter in c.FurMails)
+        FurMail[] letters;
+        lock (c.FurMails) // a sender who saw the character offline may still be adding a letter
+        {
+            letters = [.. c.FurMails];
+            c.FurMails.Clear();
+        }
+        foreach (var letter in letters)
             session.Send(FurMailMessages.Letter(letter.SenderId, letter.SenderName, letter.Time, letter.Text));
-        c.FurMails.Clear();
     }
 
     /// <summary>
@@ -88,6 +102,7 @@ public sealed class FurMailHandlers(
         var targetId = target.Account.LoginId;
         var time = GameClock.Now.ToOADate();
         var online = world.SessionOf(targetId);
+        var letter = new FurMail { SenderId = myId, SenderName = c.Name, Time = time, Text = text };
         if (online is not null && ReferenceEquals(online.ActiveCharacter, target.Character))
         {
             if (BlocklistHandlers.Blocks(target.Character, myId))
@@ -97,10 +112,9 @@ public sealed class FurMailHandlers(
             }
             online.Send(FurMailMessages.Letter(myId, c.Name, time, text));
         }
-        else
+        else if (online is not null) // online with another character: its session saves the account
         {
-            var held = default(GameSession.Exclusive);
-            if (online is not null && !online.TryExclusiveFrom(session, out held)) // online with another character: its session saves the account
+            if (!online.TryExclusiveFrom(session, out var held))
             {
                 logger.LogWarning("[{Session}] {Name}: letter to {Target} refused, the target's account is busy or its connection ended", session.Id,
                     c.Name, target.Character.Name);
@@ -109,23 +123,53 @@ public sealed class FurMailHandlers(
             }
             using (held)
             {
-                if (BlocklistHandlers.Blocks(target.Character, myId))
-                {
-                    BlocklistHandlers.Refuse(session, 2); // action
+                if (!TryPost(session, target.Character, letter))
                     return;
-                }
-                var capacity = options.Value.HouseLife.FurMailCapacity is > 0 and var set ? set : DefaultCapacity;
-                if (target.Character.FurMails.Count >= capacity)
-                {
-                    session.Send(new PacketWriter(Action14.Code, Action14.MailboxFull).ToArray());
-                    return;
-                }
-                target.Character.FurMails.Add(new FurMail { SenderId = myId, SenderName = c.Name, Time = time, Text = text });
             }
-            if (online is null)
+        }
+        else
+        {
+            await _offlineBoxes.WaitAsync().ConfigureAwait(false); // no session gate: the semaphore is never held while waiting for one
+            try
+            {
+                if (!TryPost(session, target.Character, letter))
+                    return;
                 await store.SaveAsync(target.Account).ConfigureAwait(false);
+            }
+            finally
+            {
+                _offlineBoxes.Release();
+            }
         }
         session.Send(FurMailMessages.Result(3)); // result
         logger.LogInformation("[{Session}] {Name} leaves a letter in {Target}'s mailbox: {Text}", session.Id, c.Name, target.Character.Name, text);
+    }
+
+    /// <summary>
+    /// Puts a letter into a character's box unless they block the sender or the box is full, telling the sender why it is refused; the caller
+    /// holds the box (the target's session gate, or <see cref="_offlineBoxes"/>).
+    /// </summary>
+    /// <param name="session">The sender's session.</param>
+    /// <param name="target">The character the letter is for.</param>
+    /// <param name="letter">The letter.</param>
+    /// <returns>True when the letter is in the box.</returns>
+    private bool TryPost(GameSession session, Character target, FurMail letter)
+    {
+        if (BlocklistHandlers.Blocks(target, letter.SenderId))
+        {
+            BlocklistHandlers.Refuse(session, 2); // action
+            return false;
+        }
+        var capacity = options.Value.HouseLife.FurMailCapacity is > 0 and var set ? set : DefaultCapacity;
+        lock (target.FurMails) // the character's login may be taking the letters out (SendOnLogin)
+        {
+            if (target.FurMails.Count >= capacity)
+            {
+                session.Send(new PacketWriter(Action14.Code, Action14.MailboxFull).ToArray());
+                return false;
+            }
+            target.FurMails.Add(letter);
+        }
+        return true;
     }
 }
