@@ -105,7 +105,7 @@ public sealed class ItemTable
             LinkedSkillId = W(r, 140),
             Words142 = Words(r, 142, 5),
             Description = ReversedShortString(r, 152, 254),
-            Bytes407 = Bytes(r, 407, 3),
+            FurnitureSize = Bytes(r, 407, 3), // record offsets 407 to 409: furniture size x, y, z
             Unknown410 = W(r, 410),
             CellWidth = B(r, 412),
             CellHeight = B(r, 413),

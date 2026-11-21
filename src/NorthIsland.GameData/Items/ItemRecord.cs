@@ -103,8 +103,11 @@ public sealed record ItemRecord
     /// <summary>Seconds without random encounters parsed from <see cref="Description"/>, 0 when it names none.</summary>
     public int NoEncounterSeconds { get; init; }
 
-    /// <summary>Three bytes at offset 407; nothing reads them.</summary>
-    public byte[] Bytes407 { get; init; } = [];
+    /// <summary>
+    /// The furniture size on the x, y and z axes, the three bytes at offset 407 (the client's furnSizeX, furnSizeY and furnSizeZ); a piece placed
+    /// in a house has all three above 0.
+    /// </summary>
+    public byte[] FurnitureSize { get; init; } = [];
 
     /// <summary>Word at offset 410, meaning not established.</summary>
     public ushort Unknown410 { get; init; }

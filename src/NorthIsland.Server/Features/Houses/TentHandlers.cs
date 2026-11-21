@@ -205,13 +205,13 @@ public sealed class TentHandlers(
 
     /// <summary>
     /// Whether an item can stand in a house as a piece of furniture, by the client's rule (CheckHomeDiscard, "placeable"): a furniture item that
-    /// is not a floor or wallpaper, or a large (more than one bag cell) instrument or accessory, with a furniture size on all three axes (the
-    /// three bytes at Item.dat record offset 407). Anything else, such as a vehicle, a tent or equipment, cannot be placed.
+    /// is not a floor or wallpaper, or a large (more than one bag cell) instrument or accessory, with a furniture size on all three axes
+    /// (<see cref="ItemRecord.FurnitureSize"/>). Anything else, such as a vehicle, a tent or equipment, cannot be placed.
     /// </summary>
     /// <param name="r">The item's Item.dat record, null for an unknown item.</param>
     /// <returns>True when the item can be placed as furniture.</returns>
     public static bool IsPlaceable(ItemRecord? r) =>
-        r is { Bytes407: [> 0, > 0, > 0] }
+        r is { FurnitureSize: [> 0, > 0, > 0] }
             && (r.Type == FurnitureType ? !HouseDecorHandlers.IsFloor(r.Id) && !HouseDecorHandlers.IsWallpaper(r.Id)
                 : r.Type is AccessoryType or InstrumentType && (r.CellWidth != 1 || r.CellHeight != 1));
 
