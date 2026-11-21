@@ -36,15 +36,6 @@ public readonly record struct TriggerReach(
     /// </summary>
     public const int DoorClick = 4096; // px: 2880 + 820 = 3700, rounded up to a power of two for margin
 
-    /// <summary>
-    /// The reach of every trigger but an NPC click, px on the x axis: the larger of <see cref="Walk"/> and <see cref="DoorClick"/>, as
-    /// EventEngine checks doors and walk-time NPC triggers by one reach.
-    /// </summary>
-    public const int ScreenX = Walk > DoorClick ? Walk : DoorClick;
-
-    /// <summary>The reach of those triggers on the y axis, px: as <see cref="ScreenX"/>, since walks and the view grow on both axes.</summary>
-    public const int ScreenY = ScreenX;
-
     /// <summary>The size of an event walk record of an NPC, bytes.</summary>
     private const int WalkSize = 92;
 

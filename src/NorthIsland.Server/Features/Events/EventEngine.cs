@@ -159,8 +159,8 @@ public sealed partial class EventEngine(
     /// <summary>
     /// Finds out why a trigger may not start the events of an NPC or door: the object starts no events that way, the NPC is hidden for good
     /// for the player, or the player is out of reach. An NPC is clicked from at most <see cref="TriggerReach.NpcClick"/> on each axis of the
-    /// places it can be; the other triggers come for anything on the screen or while the player walks, so they reach a screen
-    /// (<see cref="TriggerReach.ScreenX"/> by <see cref="TriggerReach.ScreenY"/>).
+    /// places it can be, and a door from anywhere in the client's view (<see cref="TriggerReach.DoorClick"/>); the triggers sent while the
+    /// player walks (an NPC come near, a door walked into) reach as far as a walk (<see cref="TriggerReach.Walk"/>).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The character.</param>
@@ -176,7 +176,8 @@ public sealed partial class EventEngine(
         {
             if (trigger == TriggerDoorClick && !events.Exists(e => (e.Flags & 1) != 0)) // event flag 1: a click inside the door starts it
                 return "the door is not clicked";
-            return TriggerReach.Of(door).Reaches(character.X, character.Y, TriggerReach.ScreenX, TriggerReach.ScreenY) ? null : "out of reach";
+            var doorReach = trigger == TriggerDoorClick ? TriggerReach.DoorClick : TriggerReach.Walk;
+            return TriggerReach.Of(door).Reaches(character.X, character.Y, doorReach, doorReach) ? null : "out of reach";
         }
         var npc = (EveNpc)source;
         // event flag 2: the event starts when the player comes near; the client does that only for an NPC without a roaming area
@@ -187,10 +188,8 @@ public sealed partial class EventEngine(
             return "the NPC is hidden";
         if (session.HiddenNpcs.TryGetValue(((ushort)character.MapId, (ushort)index), out var until) && until > GameClock.UtcNow)
             return "the NPC is hidden";
-        var (reachX, reachY) = trigger == TriggerClick
-            ? (TriggerReach.NpcClick, TriggerReach.NpcClick)
-            : (TriggerReach.ScreenX, TriggerReach.ScreenY);
-        return TriggerReach.Of(npc).Reaches(character.X, character.Y, reachX, reachY) ? null : "out of reach";
+        var reach = trigger == TriggerClick ? TriggerReach.NpcClick : TriggerReach.Walk;
+        return TriggerReach.Of(npc).Reaches(character.X, character.Y, reach, reach) ? null : "out of reach";
     }
 
     /// <summary>Creates an event run for the player on their map, with their team, instance, guild and castle state.</summary>
@@ -561,12 +560,8 @@ public sealed partial class EventEngine(
                     break;
 
                 case ResultAction.Service: // open another service window, or skip it when not implemented
-                    if (services.Open(session, mapped.Service))
+                    if (services.Open(session, mapped.Service)) // each opener records the window it opens
                     {
-                        // the sell windows are recorded here; the bank, ATM and pet storage openers record their own windows
-                        if (mapped.Service is Services.SellEquipment or Services.SellGoods)
-                            OpenServices.Open(session, character,
-                                mapped.Service == Services.SellEquipment ? ServiceWindow.SellEquipment : ServiceWindow.SellGoods);
                         session.Send(EventMessages.StopWaiting());
                         run.Started = true;
                         logger.LogInformation("[{Session}] {Source}: opened {What}", session.Id, run.Source, mapped.Description);
