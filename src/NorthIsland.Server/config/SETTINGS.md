@@ -498,16 +498,24 @@ pet voucher or the 7 Colors Egg; the one random-pet prize is the Pet Egg (Spring
 whose pet starts at level 1 like every new pet. Each event's monsters drop its common bag (1.67% per monster) and, rarely,
 its big bag (0.0125%). The rates are set for a fast grinder at 20 kills a minute (1,200 kills an hour): about 20 common
 bags an hour and one big bag every 4 hours, counting the big bags found inside common bags (0.1 an hour from those and
-0.15 dropped). That works out to about one jackpot every 10 hours and one top prize every 100 hours, before choice cards.
+0.15 dropped). That works out to about one jackpot every 10 hours and one top prize every 150 hours, before choice cards.
 The bags are the client's own lucky bags (item type 41,
 which show their contents when previewed), except the Anniversary boxes, and their rows are in `Data/LuckyBags.tsv` and
-`Data/BoxGuesses.tsv` (or override them with `MallBoxes:LuckyBagsFile`). All bags follow one pattern (common bag weights
-out of 10,000, big bag weights out of 1,000):
+`Data/BoxGuesses.tsv` (or override them with `MallBoxes:LuckyBagsFile`). Every bag has a few themed rows and the same
+fixed rows; the forging scrolls come more often and in bigger stacks the lower their success rate (common bag weights out
+of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common | 4 foods, Wishing Coins or Bamboo Dragonflies (1060 each, 42.4%); 6 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks, Alchemy Books 1 and 2 (550 each, 33%); 5 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, Pet Lethe Scrolls, door vouchers, GPS, spars, Alchemy Books 3 and 4 (300 each, 15%); the event's big bag (50, 0.5%); one jackpot (15, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
-| Big | 7 themed rares (95 each, 66.5%) and a Silver Card (35, 3.5%); 4 themed jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Yacht, Bomb Diamonds, Potential Pill (60 each, 24%) and a Golden Card (20, 2%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar (17 each, 3.4%) and a Free Card (6, 0.6%) |
+| Common, themed | 3 foods (5 each, pizzas 2) or Wishing Coins (820 each, 24.6%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (350 each, 14%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
+| Common, fixed | Carnie Token ×3 (810, 8.1%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); Demon Scroll ×3 and Principality Scroll ×3 (400 each, 4%); Archangel Scroll ×2 (250, 2.5%), Virtues Scroll ×2 (200, 2%), Small Demon Scroll (150, 1.5%); Black Diamond +20 (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); Ofanim Scroll (100, 1%), Cherubim Scroll (60, 0.6%); Shining Diamond +22 (80, 0.8%); Seraph Scroll and Nimbus Diamond +24 (15 each, 0.15%); a Bronze Card (590, 5.9%), a Silver Card (300, 3%) and a Golden Card (5, 0.05%) |
+| Big, themed | 4 rares (70 each, 28%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
+| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); Virtues Scroll ×3 and Ofanim Scroll ×2 (60 each, 6%), Cherubim Scroll ×2 (50, 5%), Seraph Scroll ×2 (30, 3%); Pink Diamond +26 (50, 5%), Golden +28 (40, 4%), Orange +30 (30, 3%), Grass +32 (15, 1.5%), Blove +36 (10, 1%), Death +40 (3, 0.3%); a Silver Card (35, 3.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
+
+At 20 kills a minute that is about 1.2 Alchemy Book 1s, 1 Book 2, 0.8 Book 3s and 0.6 Book 4s an hour, a
+Strong Scroll or a Pet Lethe Scroll every 3 hours, a Seraph Scroll every 22 hours and a Black Diamond every 3 hours.
+Travel items aren't prizes (Bamboo Dragonfly, Teleport Scroll, GPS, Memory Crystal, also taken out of the War Pack, the
+Scroll Pack and the Thanksgiving Egg in `Data/MallBoxes.tsv`); the Yacht Voucher is only a top prize.
 
 The four choice cards (gift cards, `Data/GiftCards.tsv`) are exchanged for any one prize of their tier from every event,
 chosen by the player, so a prize whose event is months away is still within reach. Everything a common bag (or the 2013 Big
@@ -517,18 +525,18 @@ the big bags. Holiday items fill only their own event's bags.
 
 | Card | Choose one of |
 |---|---|
-| Bronze Card (50017) | the 57 uncommons, Alchemy Book 1, the Escape Button and the four bottle potions |
-| Silver Card (50018) | the 81 rares |
+| Bronze Card (50017) | the 56 uncommons, Alchemy Book 1, the Escape Button and the four bottle potions |
+| Silver Card (50018) | the 79 rares |
 | Golden Card (50019) | the 22 jackpots |
 | Free Card (50000) | the 12 top prizes |
 
 At 20 kills a minute that is about 1.2 Bronze Cards and 0.6 Silver Cards an hour. Outside its own event, getting a
 chosen prize takes about 1.5 to 5 times as many monsters as during it (about 1 in 1,000 kills for an uncommon, 2,000 for a
-rare, 80,000 for a jackpot and 800,000 for a top prize, against 350, 1,200, 26,000 and 170,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
+rare, 80,000 for a jackpot and 1,600,000 for a top prize, against 410, 1,400, 28,000 and 320,000 in season). After changing a card's choices, raise `GiftCards.Flag` so clients reload their saved lists.
 
 The mall's real boxes are prizes too (Gift Pack, War Pack, Scroll Pack, Gear Pack with the pet gear, Transferred Pack,
 Water Pack, Maid Box, Crystal Ice Cube, Super Gift Box, Friendship Pumpkin, Thanksgiving Egg, 2010 Jolly Pack, Anniversary
-Big Bag 34302), with their pet voucher rows taken out of `Data/MallBoxes.tsv`.
+Big Bag 34302), with their pet voucher and travel item rows taken out of `Data/MallBoxes.tsv`.
 
 Mall items no event gives, on purpose:
 
