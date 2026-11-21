@@ -130,7 +130,79 @@ public sealed class PuppetHandlers(
     private static bool Busy(GameSession s) => s.Trades.Items is not null || s.Trades.Pets is not null || s.Stalls.Any;
 
     /// <summary>
+    /// Lists the online sessions of a player's puppet partners: their helper, the requesters of the cards they hold and the other side of an open
+    /// invitation. The caller holds <see cref="_lock"/>.
+    /// </summary>
+    /// <param name="c">The player's active character.</param>
+    /// <param name="id">The player's login id.</param>
+    /// <returns>The partners' sessions, without the player's own.</returns>
+    private HashSet<GameSession> Partners(Character c, int id)
+    {
+        var ids = new HashSet<int>();
+        if (c.PuppetHelperId != 0)
+            ids.Add(c.PuppetHelperId);
+        foreach (var card in c.PuppetCards)
+            ids.Add(card.RequesterId);
+        if (_invites.TryGetValue(id, out var asked))
+            ids.Add(asked.Requester);
+        foreach (var (helperId, sent) in _invites)
+        {
+            if (sent.Requester == id)
+                ids.Add(helperId);
+        }
+        ids.Remove(id);
+        return [.. ids.Select(world.SessionOf).OfType<GameSession>()];
+    }
+
+    /// <summary>
+    /// Runs puppet work of a player under the session gates of their online partners and then <see cref="_lock"/>: the work may change a partner's
+    /// card exp, relation or cards. The gates are taken before the lock, which is never held while waiting for one; when one cannot be taken, or a
+    /// new partner came online meanwhile, the work is refused.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="c">The player's active character.</param>
+    /// <param name="id">The player's login id.</param>
+    /// <param name="what">The work, for the log.</param>
+    /// <param name="work">The work, run under the lock.</param>
+    /// <returns>True when the work ran.</returns>
+    private bool UnderPartners(GameSession session, Character c, int id, string what, Action work)
+    {
+        HashSet<GameSession> partners;
+        lock (_lock)
+            partners = Partners(c, id);
+        var holds = new List<GameSession.Exclusive>();
+        try
+        {
+            foreach (var partner in partners)
+            {
+                if (!partner.TryExclusiveFrom(session, out var held))
+                {
+                    logger.LogWarning("[{Session}] {Name}: puppet {What} refused: a partner's session is busy", session.Id, c.Name, what);
+                    return false;
+                }
+                holds.Add(held);
+            }
+            lock (_lock)
+            {
+                if (!Partners(c, id).IsSubsetOf(partners))
+                {
+                    logger.LogWarning("[{Session}] {Name}: puppet {What} refused: the partners changed", session.Id, c.Name, what);
+                    return false;
+                }
+                work();
+                return true;
+            }
+        }
+        finally
+        {
+            foreach (var held in holds)
+                held.Dispose();
+        }
+    }
+
+    /// <summary>
     /// Handles a puppet packet; the first body byte selects the step (invite, accept, refuse, cancel, end, use exp, form, mail, time left, grow).
+    /// It runs under the session gates of the player's online partners (<see cref="UnderPartners"/>), since most steps change them too.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -139,9 +211,9 @@ public sealed class PuppetHandlers(
         if (session.State != SessionState.InWorld || session.ActiveCharacter is not { } c || session.Account is null || body.Length < 1)
             return ValueTask.CompletedTask;
         var id = session.Account.LoginId;
-        var span = body.Span;
-        lock (_lock)
+        UnderPartners(session, c, id, "packet", () =>
         {
+            var span = body.Span;
             Expire(id, c);
             switch (span[0])
             {
@@ -189,7 +261,7 @@ public sealed class PuppetHandlers(
                     Grow(session, c, id);
                     break;
             }
-        }
+        });
         return ValueTask.CompletedTask;
     }
 
@@ -342,7 +414,8 @@ public sealed class PuppetHandlers(
 
     /// <summary>
     /// Copies the share of earned exp onto the card of the requester's character of each card the helper holds; a requester who is online with
-    /// another character gets nothing, and a full card ends the relation.
+    /// another character gets nothing, and a full card ends the relation. It runs under the requesters' session gates (<see cref="UnderPartners"/>);
+    /// a requester whose session is busy misses that share.
     /// </summary>
     /// <param name="session">The helper's session.</param>
     /// <param name="exp">The exp the helper earned.</param>
@@ -352,7 +425,7 @@ public sealed class PuppetHandlers(
             return;
         var id = session.Account.LoginId;
         var share = (int)((long)exp * options.Value.Puppet.SharePercent / 100);
-        lock (_lock)
+        UnderPartners(session, helper, id, "exp share", () =>
         {
             Expire(id, helper);
             foreach (var card in helper.PuppetCards.ToList())
@@ -372,7 +445,7 @@ public sealed class PuppetHandlers(
                     session.Send(Result(16));
                 }
             }
-        }
+        });
     }
 
     /// <summary>Pays the exp on the requester's card into their experience and empties the card; refused during a relation.</summary>
@@ -557,15 +630,26 @@ public sealed class PuppetHandlers(
         }
     }
 
-    /// <summary>Sends the puppet state on login: card step, relation, cards, and notices to the partners who are online.</summary>
+    /// <summary>
+    /// Sends the puppet state on login: card step, relation, cards, and notices to the partners who are online; under the partners' session
+    /// gates, since relations that expired end on both sides (when one is busy the state is sent without ending them).
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The player's character.</param>
     public void SendOnLogin(GameSession session, Character c)
     {
         var id = session.Account!.LoginId;
-        lock (_lock)
+        if (UnderPartners(session, c, id, "expiry at login", () =>
+            {
+                Expire(id, c);
+                Send();
+            }))
+            return;
+        lock (_lock) // a partner is busy: the expired relations end at the next puppet packet
+            Send();
+
+        void Send()
         {
-            Expire(id, c);
             if (c.MemCardStep > 0)
                 session.Send(P(22, w => w.I32(id).U8(c.MemCardStep).U8(0)));
             if (c.PuppetHelperId != 0)

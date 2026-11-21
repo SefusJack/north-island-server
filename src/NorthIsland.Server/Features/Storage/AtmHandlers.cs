@@ -132,8 +132,8 @@ public sealed class AtmHandlers(
     }
 
     /// <summary>
-    /// Sends gold from the player's ATM balance to the ATM balance of another online player (<c>29/5</c>). Refused for an offline or own target, an
-    /// amount over the balance, or a full receiver.
+    /// Sends gold from the player's ATM balance to the ATM balance of another online player (<c>29/5</c>), under the receiver's session gate.
+    /// Refused for an offline or own target, an amount over the balance, a full receiver, or a receiver whose session is busy.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: i32 login id of the receiver, i32 gold amount.</param>
@@ -157,17 +157,26 @@ public sealed class AtmHandlers(
                 character.AtmGold);
             return ValueTask.CompletedTask;
         }
-        if ((long)receiver.AtmGold + amount > AtmMessages.MaxBalance)
+        if (!target.TryExclusiveFrom(session, out var held)) // the receiver's own packet may be changing their ATM balance
         {
-            session.Send(AtmMessages.Full());
+            logger.LogWarning("[{Session}] {Name}: ATM transfer {Amount} to {Target} refused: the receiver's session is busy", session.Id,
+                character.Name, amount, targetId);
             return ValueTask.CompletedTask;
         }
-        receiver.AtmGold += amount;
-        character.AtmGold -= amount;
-        session.Send(AtmMessages.Subtracted(amount, targetId));
-        target.Send(AtmMessages.Added(amount, senderId));
-        logger.LogInformation("[{Session}] {Name} transfers {Amount} gold from the ATM to {Target} (ATM {Atm}, theirs {Theirs})", session.Id,
-            character.Name, amount, receiver.Name, character.AtmGold, receiver.AtmGold);
+        using (held)
+        {
+            if ((long)receiver.AtmGold + amount > AtmMessages.MaxBalance)
+            {
+                session.Send(AtmMessages.Full());
+                return ValueTask.CompletedTask;
+            }
+            receiver.AtmGold += amount;
+            character.AtmGold -= amount;
+            session.Send(AtmMessages.Subtracted(amount, targetId));
+            target.Send(AtmMessages.Added(amount, senderId));
+            logger.LogInformation("[{Session}] {Name} transfers {Amount} gold from the ATM to {Target} (ATM {Atm}, theirs {Theirs})", session.Id,
+                character.Name, amount, receiver.Name, character.AtmGold, receiver.AtmGold);
+        }
         return ValueTask.CompletedTask;
     }
 

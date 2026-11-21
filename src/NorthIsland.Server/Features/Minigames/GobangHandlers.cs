@@ -111,7 +111,7 @@ public sealed class GobangHandlers(
                 {
                     if (!hall.Tables[t].Playing)
                         continue;
-                    Finish(hall.Tables[t], 0, new byte[5]); // side 0: a draw, no winning cells
+                    Finish(hall.Tables[t], 0, new byte[5], holder: null); // side 0: a draw, no winning cells
                     logger.LogInformation("Five in a row at table {Table} of house map {Map} ends in a draw: the server is stopping", t, map);
                 }
             }
@@ -178,7 +178,11 @@ public sealed class GobangHandlers(
             s.Send(packet);
     }
 
-    /// <summary>Handles the Five in a Row packet: enter or leave the hall, sit, start the game, or move.</summary>
+    /// <summary>
+    /// Handles the Five in a Row packet: enter or leave the hall, sit, start the game, or move. A start takes the ante from the other seated
+    /// player too, so it first takes that player's session gate (outside <see cref="_lock"/>, which is never held while waiting for a gate) and
+    /// is refused when that fails.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action: the sub code, then its arguments.</param>
     internal ValueTask OnPacket(GameSession session, ReadOnlyMemory<byte> body)
@@ -187,28 +191,43 @@ public sealed class GobangHandlers(
             return ValueTask.CompletedTask;
         var id = session.Account.LoginId;
         var span = body.Span;
-        lock (_lock)
+        GameSession? partner = null;
+        if (span[0] == Action57.GobangStart)
         {
-            switch (span[0])
+            lock (_lock)
+                partner = Find(c, id) is { Table: { } at, Seat: var seat } && world.SessionOf(at.Seat[1 - seat]) is { } o ? o : null;
+        }
+        var held = default(GameSession.Exclusive);
+        if (partner is not null && !partner.TryExclusiveFrom(session, out held))
+        {
+            logger.LogWarning("[{Session}] {Name}: five in a row start refused: the other player's session is busy", session.Id, c.Name);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+        {
+            lock (_lock)
             {
-                case Action57.GobangEnter when TentHandlers.IsHouseMap(c.MapId): // 57/11/1: enter the hall of this house map
-                    Enter(session, c, id);
-                    break;
-                case Action57.GobangQuit: // 57/11/2: quit, leaves the table and the hall
-                    Leave(session, quit: true);
-                    break;
-                case Action57.GobangBack: // 57/11/6: back, leaves the table but stays in the hall
-                    Leave(session, quit: false);
-                    break;
-                case Action57.GobangSit when span.Length >= 3: // 57/11/3: sit at a table with the ante code asked for
-                    Sit(session, c, id, span[1], span[2]);
-                    break;
-                case Action57.GobangStart: // 57/11/4: start the game at their table
-                    Start(session, c, id);
-                    break;
-                case Action57.GobangMove when span.Length >= 2: // 57/11/5: place a stone on a board cell
-                    Move(c, id, span[1]);
-                    break;
+                switch (span[0])
+                {
+                    case Action57.GobangEnter when TentHandlers.IsHouseMap(c.MapId): // 57/11/1: enter the hall of this house map
+                        Enter(session, c, id);
+                        break;
+                    case Action57.GobangQuit: // 57/11/2: quit, leaves the table and the hall
+                        Leave(session, quit: true);
+                        break;
+                    case Action57.GobangBack: // 57/11/6: back, leaves the table but stays in the hall
+                        Leave(session, quit: false);
+                        break;
+                    case Action57.GobangSit when span.Length >= 3: // 57/11/3: sit at a table with the ante code asked for
+                        Sit(session, c, id, span[1], span[2]);
+                        break;
+                    case Action57.GobangStart: // 57/11/4: start the game at their table
+                        Start(session, c, id, partner);
+                        break;
+                    case Action57.GobangMove when span.Length >= 2: // 57/11/5: place a stone on a board cell
+                        Move(session, c, id, span[1]);
+                        break;
+                }
             }
         }
         return ValueTask.CompletedTask;
@@ -300,13 +319,19 @@ public sealed class GobangHandlers(
     /// <param name="session">The player's session.</param>
     /// <param name="c">The player's character.</param>
     /// <param name="id">The player's login id.</param>
-    private void Start(GameSession session, Character c, int id)
+    /// <param name="partner">The other seated player's session, whose gate the caller holds; null when none was seated.</param>
+    private void Start(GameSession session, Character c, int id, GameSession? partner)
     {
-        var (hall, table, index, _) = Find(c, id);
+        var (hall, table, index, seat) = Find(c, id);
         if (hall is null || table is null || table.Playing || table.Seat[0] == 0 || table.Seat[1] == 0)
             return;
         var amount = Antes[table.Ante];
         var players = table.Seat.Select(s => world.SessionOf(s) is { ActiveCharacter: { } pc } o ? (Session: o, Character: pc) : default).ToArray();
+        if (!ReferenceEquals(players[1 - seat].Session, partner)) // the other seat changed hands since its gate was taken
+        {
+            logger.LogWarning("[{Session}] {Name}: five in a row start at table {Table} refused: the other seat changed", session.Id, c.Name, index);
+            return;
+        }
         if (players.Any(p => p.Character is null || p.Character.Gold < amount))
         {
             logger.LogWarning("[{Session}] {Name}: five in a row start at table {Table}, but a player cannot pay the ante of {Ante}", session.Id,
@@ -328,10 +353,11 @@ public sealed class GobangHandlers(
     }
 
     /// <summary>Places a stone for the player when it is their turn, and ends the game on five in a row or a full board.</summary>
+    /// <param name="session">The player's session, whose gate the caller holds.</param>
     /// <param name="c">The player's character.</param>
     /// <param name="id">The player's login id.</param>
     /// <param name="cell">The board cell, 0..224.</param>
-    private void Move(Character c, int id, byte cell)
+    private void Move(GameSession session, Character c, int id, byte cell)
     {
         var (hall, table, index, seat) = Find(c, id);
         if (hall is null || table is null || !table.Playing || cell >= Size * Size || table.Board[cell] != 0 || table.Turn != seat + 1)
@@ -342,12 +368,12 @@ public sealed class GobangHandlers(
             Send(s, Packet(Action57.GobangPlay, w => w.U8(1).U8(side).U8(cell)));
         if (Line(table.Board, cell) is { } five)
         {
-            Finish(table, side, five);
+            Finish(table, side, five, session);
             return;
         }
         if (table.Board.All(b => b != 0))
         {
-            Finish(table, 0, new byte[5]);
+            Finish(table, 0, new byte[5], session);
             return;
         }
         table.Turn = (byte)(3 - side);
@@ -384,14 +410,15 @@ public sealed class GobangHandlers(
     /// <param name="table">The table.</param>
     /// <param name="winner">The winning side, 1 or 2; 0 for a draw.</param>
     /// <param name="five">The five winning cells; zeros when there are none.</param>
+    /// <param name="holder">The session whose gate the caller holds, or null; see <see cref="Pay"/>.</param>
     /// <param name="leaver">The login id of a player who left in the middle of the game and gets no result; 0 for none.</param>
-    private void Finish(Table table, byte winner, byte[] five, int leaver = 0)
+    private void Finish(Table table, byte winner, byte[] five, GameSession? holder, int leaver = 0)
     {
         table.Playing = false;
         table.Over = true;
         foreach (var s in table.Seat.Where(s => s != leaver))
             Send(s, Packet(Action57.GobangPlay, w => { w.U8(2).U8(winner); foreach (var cell in five) w.U8(cell); }));
-        Settle(table, winner);
+        Settle(table, winner, holder);
     }
 
     /// <summary>
@@ -400,7 +427,8 @@ public sealed class GobangHandlers(
     /// </summary>
     /// <param name="table">The table, whose seats still name the two players.</param>
     /// <param name="winner">The winning side, 1 or 2; 0 for a draw.</param>
-    private void Settle(Table table, byte winner)
+    /// <param name="holder">The session whose gate the caller holds, or null; see <see cref="Pay"/>.</param>
+    private void Settle(Table table, byte winner, GameSession? holder)
     {
         var (stake, stakers) = (table.Stake, table.Stakers.ToArray());
         table.Stake = 0;
@@ -410,33 +438,75 @@ public sealed class GobangHandlers(
         if (winner != 0 && stakers[winner - 1] is { } wc)
         {
             var pot = stake * stakers.Count(s => s is not null);
-            var paid = Pay(table.Seat[winner - 1], wc, pot);
-            logger.LogInformation("{Winner} wins {Paid} of {Pot} gold held at five in a row from {Loser}", wc.Name, paid, pot,
-                stakers[2 - winner]?.Name);
+            Pay(table.Seat[winner - 1], wc, pot, holder, $"wins at five in a row from {stakers[2 - winner]?.Name}");
             return;
         }
         for (var s = 0; s < 2; s++)
         {
             if (stakers[s] is { } sc)
-                logger.LogInformation("{Name} gets {Paid} of the {Stake} gold ante back from five in a row", sc.Name, Pay(table.Seat[s], sc, stake),
-                    stake);
+                Pay(table.Seat[s], sc, stake, holder, "gets the ante back from five in a row");
         }
     }
 
     /// <summary>
-    /// Adds gold to a character, up to the most a player can hold, and sends the new amount when they are online with that character.
+    /// Adds gold to a character, up to the most a player can hold, and sends the new amount when they are online with that character. An online
+    /// player is paid under their session gate: at once when the caller holds it or it is free; otherwise (it is held, maybe by a packet of theirs
+    /// that waits for <see cref="_lock"/>, which the caller holds) from a task that holds no gate and waits for it, so the payout is never lost.
     /// </summary>
     /// <param name="id">The player's login id.</param>
     /// <param name="c">The character that gets the gold.</param>
     /// <param name="amount">The gold to add.</param>
-    /// <returns>The gold actually added.</returns>
-    private int Pay(int id, Character c, int amount)
+    /// <param name="holder">The session whose gate the caller holds, or null when it holds none that matters here.</param>
+    /// <param name="why">What the gold is for, for the log.</param>
+    private void Pay(int id, Character c, int amount, GameSession? holder, string why)
+    {
+        var s = world.SessionOf(id) is { } online && ReferenceEquals(online.ActiveCharacter, c) ? online : null;
+        if (s is null || ReferenceEquals(s, holder))
+        {
+            Credit(s, c, amount, why);
+            return;
+        }
+        if (s.TryExclusive(out var held)) // never wait here: the caller holds _lock
+        {
+            using (held)
+                Credit(s, c, amount, why);
+            return;
+        }
+        _ = PayLaterAsync(s, c, amount, why);
+    }
+
+    /// <summary>Pays a player from a task that holds no gate, once their session's gate is free.</summary>
+    /// <param name="s">The player's session.</param>
+    /// <param name="c">The character that gets the gold.</param>
+    /// <param name="amount">The gold to add.</param>
+    /// <param name="why">What the gold is for, for the log.</param>
+    /// <returns>A task that completes when the gold is paid.</returns>
+    private async Task PayLaterAsync(GameSession s, Character c, int amount, string why)
+    {
+        try
+        {
+            await Task.Yield(); // off the caller's thread, which holds _lock and a gate
+            using (await s.ExclusiveAsync().ConfigureAwait(false))
+                Credit(s, c, amount, why);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Five in a row: paying {Amount} gold to {Name} failed", amount, c.Name);
+        }
+    }
+
+    /// <summary>Adds the gold, up to the most a player can hold, tells the player when they are online and logs it.</summary>
+    /// <param name="s">The player's session, whose gate the caller holds; null when the player is offline.</param>
+    /// <param name="c">The character that gets the gold.</param>
+    /// <param name="amount">The gold to add.</param>
+    /// <param name="why">What the gold is for, for the log.</param>
+    private void Credit(GameSession? s, Character c, int amount, string why)
     {
         var paid = Math.Max(0, Math.Min(amount, MaxGold - c.Gold));
         c.Gold += paid;
-        if (world.SessionOf(id) is { } s && ReferenceEquals(s.ActiveCharacter, c))
+        if (s is not null && !s.Closing)
             s.Send(PlayerMessages.Money(c.Gold));
-        return paid;
+        logger.LogInformation("{Name} {Why}: {Paid} of {Amount} gold", c.Name, why, paid, amount);
     }
 
     /// <summary>Takes the player out of their seat, which loses a game in progress, and out of the hall when they quit.</summary>
@@ -456,7 +526,7 @@ public sealed class GobangHandlers(
             {
                 var other = table.Seat[1 - seat];
                 if (table.Playing && other != 0)
-                    Finish(table, (byte)(2 - seat), new byte[5], leaver: id);
+                    Finish(table, (byte)(2 - seat), new byte[5], holder: null, leaver: id);
                 else if (table.Over && other != 0)
                     Send(other, Packet(Action57.GobangPlay, w => w.U8(3)));
                 table.Seat[seat] = 0;

@@ -287,8 +287,8 @@ public sealed class MarriageHandlers(
 
     /// <summary>
     /// Handles a yes or no to a marriage application; once both have said yes, checks both players again (still a team of two on one map, still
-    /// free to marry, the rings and the fee), then charges the fee and records the application with its deadline. An application that waited too
-    /// long is dropped.
+    /// free to marry, the rings and the fee) under the other player's session gate, then charges the fee and records the application with its
+    /// deadline. An application that waited too long, or whose other player's session is busy at the last yes, is cancelled.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -308,11 +308,32 @@ public sealed class MarriageHandlers(
             if (pending.Accepted.Count < 2)
                 return ValueTask.CompletedTask;
         }
+        var other = world.SessionOf(id == pending.GroomId ? pending.BrideId : pending.GroomId);
+        var held = default(GameSession.Exclusive);
+        if (other is not null && !other.TryExclusiveFrom(session, out held)) // the other player's own packet may be spending the fee
+        {
+            logger.LogWarning("[{Session}] marriage application cancelled at the last yes: the other player's session is busy", session.Id);
+            Cancel(pending, id, divorce: false);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+            Apply(session, pending);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Records a marriage application both players said yes to, under both players' session gates: checks both again, then charges the fee and
+    /// records the application with its deadline.
+    /// </summary>
+    /// <param name="session">The session of the player who said yes last.</param>
+    /// <param name="pending">The application both said yes to.</param>
+    private void Apply(GameSession session, Pending pending)
+    {
         _applications.TryRemove(KeyValuePair.Create(pending.GroomId, pending));
         _applications.TryRemove(KeyValuePair.Create(pending.BrideId, pending));
         if (world.SessionOf(pending.GroomId) is not { } groom || world.SessionOf(pending.BrideId) is not { } bride
             || InWorld(groom) is not { } g || InWorld(bride) is not { } b)
-            return ValueTask.CompletedTask;
+            return;
         var refusal = Partner(groom) != bride ? MarriageMessages.Result(MarriageMessages.NotTwo) : CoupleRefusal(groom, bride);
         if (refusal is not null)
         {
@@ -320,7 +341,7 @@ public sealed class MarriageHandlers(
             bride.Send(refusal);
             logger.LogWarning("[{Session}] {Groom} and {Bride}: marriage application refused at the last yes (45/20 {Code})", session.Id, g.Name,
                 b.Name, refusal[2]);
-            return ValueTask.CompletedTask;
+            return;
         }
         var application = marriages.Apply(pending.GroomId, pending.BrideId, GameClock.UtcNow);
         var deadline = application.UntilUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
@@ -333,7 +354,6 @@ public sealed class MarriageHandlers(
             marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: true);
         }
         logger.LogInformation("[{Session}] {Groom} and {Bride} applied to marry (until {Until})", session.Id, g.Name, b.Name, deadline);
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>Cancels a pending application or divorce and tells both players; an entry of either player for another request is kept.</summary>
@@ -405,7 +425,7 @@ public sealed class MarriageHandlers(
 
     /// <summary>
     /// Runs the ceremony: locks the couple, announces it, plays the steps for everyone on the map, and records the marriage if both are still there
-    /// at the end.
+    /// at the end, setting each spouse's flags under that spouse's session gate.
     /// </summary>
     /// <param name="mapId">The map of the church.</param>
     /// <param name="application">The couple's application.</param>
@@ -459,11 +479,15 @@ public sealed class MarriageHandlers(
             foreach (var pid in new[] { g, b })
                 if (_applications.TryGetValue(pid, out var asked))
                     Cancel(asked, pid, divorce: false);
+            await Task.Yield(); // off the thread of the packet that started the ceremony, which holds its gate when every step delay is 0
             foreach (var (s, c) in new[] { (groom, gc), (bride, bc) })
             {
-                marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: false);
-                marks.TrySetFlag(s, c, MarriageRegistry.MarriedFlag, on: true);
-                SendCard(s, couple);
+                using (await s.ExclusiveAsync().ConfigureAwait(false)) // this task holds no other gate; the flags change between the spouse's packets
+                {
+                    marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: false);
+                    marks.TrySetFlag(s, c, MarriageRegistry.MarriedFlag, on: true);
+                    SendCard(s, couple);
+                }
             }
             ToChurch(MarriageMessages.WeddingStep(23, g, b));
             logger.LogInformation("{Groom} and {Bride} are married", gc.Name, bc.Name);
@@ -529,8 +553,8 @@ public sealed class MarriageHandlers(
     }
 
     /// <summary>
-    /// Handles a yes or no to a divorce; once both have said yes, the applicant divorces if they can still pay. A divorce that waited too long is
-    /// dropped.
+    /// Handles a yes or no to a divorce; once both have said yes, the applicant divorces if they can still pay, checked under the applicant's
+    /// session gate. A divorce that waited too long, or whose applicant's session is busy at the last yes, is cancelled.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -550,15 +574,29 @@ public sealed class MarriageHandlers(
             if (pending.Accepted.Count < 2)
                 return ValueTask.CompletedTask;
         }
-        _divorces.TryRemove(KeyValuePair.Create(pending.GroomId, pending));
-        _divorces.TryRemove(KeyValuePair.Create(pending.BrideId, pending));
-        if (world.SessionOf(pending.ApplicantId) is { } applicant && applicant.ActiveCharacter is { } c
-            && marriages.CoupleOf(pending.ApplicantId) is { } couple && c.Gold >= MarriageRegistry.DivorceFee)
-            Divorce(applicant, c, couple, absentId: 0);
+        var applicant = world.SessionOf(pending.ApplicantId);
+        var held = default(GameSession.Exclusive);
+        if (applicant is not null && !applicant.TryExclusiveFrom(session, out held)) // the applicant's own packet may be spending the fee
+        {
+            logger.LogWarning("[{Session}] divorce cancelled at the last yes: the applicant's session is busy", session.Id);
+            Cancel(pending, id, divorce: true);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+        {
+            _divorces.TryRemove(KeyValuePair.Create(pending.GroomId, pending));
+            _divorces.TryRemove(KeyValuePair.Create(pending.BrideId, pending));
+            if (applicant is not null && applicant.ActiveCharacter is { } c
+                && marriages.CoupleOf(pending.ApplicantId) is { } couple && c.Gold >= MarriageRegistry.DivorceFee)
+                Divorce(applicant, c, couple, absentId: 0);
+        }
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Charges the fee and divorces: records it, tells both spouses who are online and clears their married mark.</summary>
+    /// <summary>
+    /// Charges the fee and divorces: records it, tells both spouses who are online and clears their married mark. The caller holds the gates of
+    /// both spouses' online sessions.
+    /// </summary>
     /// <param name="applicant">The session of the paying player.</param>
     /// <param name="c">The paying player's character.</param>
     /// <param name="couple">The couple to divorce.</param>
