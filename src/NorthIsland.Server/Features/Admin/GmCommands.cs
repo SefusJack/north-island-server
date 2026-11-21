@@ -14,6 +14,7 @@ namespace NorthIsland.Server.Features.Admin;
 /// <param name="world">The world state, used to find online players and to move them.</param>
 /// <param name="store">The account store, to find and save accounts.</param>
 /// <param name="bans">The ban list.</param>
+/// <param name="sessions">The live session of each account, to disconnect a banned account that is at character select.</param>
 /// <param name="items">The item records for <c>/give</c>.</param>
 /// <param name="formulas">The formula tables, for the experience of a level.</param>
 /// <param name="combat">The combat stats, recalculated after a level change.</param>
@@ -24,6 +25,7 @@ public sealed class GmCommands(
     WorldState world,
     IAccountStore store,
     BanList bans,
+    AccountSessions sessions,
     ItemData items,
     FormulaData formulas,
     CombatStats combat,
@@ -207,7 +209,8 @@ public sealed class GmCommands(
     }
 
     /// <summary>
-    /// Handles <c>/ban</c> and <c>/ban-ip</c>: bans the account, and for an IP ban also the address of the online player, then disconnects the player.
+    /// Handles <c>/ban</c> and <c>/ban-ip</c>: bans the account, and for an IP ban also the address of the connected player, then disconnects
+    /// every session of the account: the one in the world and the one at character select.
     /// </summary>
     /// <param name="session">The GM's session.</param>
     /// <param name="args">The command arguments: the name.</param>
@@ -221,13 +224,14 @@ public sealed class GmCommands(
             return $"No player or account named {args[0]}.";
         if (ReferenceEquals(account, session.Account))
             return "You cannot ban yourself.";
-        var online = world.SessionOf(account.LoginId)!;
+        GameSession[] connected =
+            [.. new[] { world.SessionOf(account.LoginId), sessions.SessionOf(account.LoginId) }.OfType<GameSession>().Distinct()];
         IPAddress? ip = null;
         if (address)
         {
-            ip = online?.RemoteEndPoint?.Address;
+            ip = connected.Select(s => s.RemoteEndPoint?.Address).FirstOrDefault(a => a is not null);
             if (ip is null)
-                return $"{args[0]} must be online for an IP ban (the server keeps no addresses).";
+                return $"{args[0]} must be connected for an IP ban (the server keeps no addresses).";
             if (IPAddress.IsLoopback(ip) || BanList.Normal(ip) == (session.RemoteEndPoint is { } own ? BanList.Normal(own.Address) : null))
                 return $"{args[0]} plays from this PC or your own address ({BanList.Normal(ip)}); not banned, as it would lock you out too.";
         }
@@ -235,8 +239,8 @@ public sealed class GmCommands(
         var added = bans.BanAccount(account.Name, by);
         if (ip is not null)
             added |= bans.BanAddress(ip, account.Name, by);
-        if (online is not null)
-            Disconnect(online);
+        foreach (var target in connected)
+            Disconnect(target);
         return !added ? $"{args[0]} was already banned."
             : ip is null ? $"{args[0]} (account {account.Name}) is banned."
                 : $"{args[0]} (account {account.Name}, {BanList.Normal(ip)}) is banned.";

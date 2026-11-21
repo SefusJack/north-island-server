@@ -42,6 +42,12 @@ public sealed class AccountSessions
     public bool Holds(GameSession session) =>
         session.Account is { } account && _byLoginId.TryGetValue(account.LoginId, out var live) && ReferenceEquals(live, session);
 
+    /// <summary>Gives the live session of an account, whether it is in the world or still at character select.</summary>
+    /// <param name="loginId">The account's login id.</param>
+    /// <returns>The session that holds the account and is still logged in to it, or null when there is none.</returns>
+    public GameSession? SessionOf(int loginId) =>
+        _byLoginId.TryGetValue(loginId, out var live) && live.Account?.LoginId == loginId ? live : null;
+
     /// <summary>Gives up the claim of a session on its account; does nothing when a later session holds it.</summary>
     /// <param name="session">The session that leaves.</param>
     public void Release(GameSession session)
