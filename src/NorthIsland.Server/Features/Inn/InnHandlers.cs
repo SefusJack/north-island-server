@@ -8,29 +8,16 @@ namespace NorthIsland.Server.Features.Inn;
 /// Handles the inn rest: offering a rest for a price, and healing the team and its pets when the player accepts. An offer belongs to the
 /// event run that made it and lasts while that run goes on, on the map it was made on, outside battle.
 /// </summary>
-public sealed class InnHandlers
+/// <param name="world">The world state, used to find the team members and their sessions.</param>
+/// <param name="maps">The map data, used to find the npc of the running event.</param>
+/// <param name="logger">The logger.</param>
+public sealed class InnHandlers(
+    WorldState world,
+    MapData maps,
+    ILogger<InnHandlers> logger)
 {
-    /// <summary>The world state, used to find the team members and their sessions.</summary>
-    private readonly WorldState world;
-
-    /// <summary>The map data, used to find the npc of the running event.</summary>
-    private readonly MapData maps;
-
-    /// <summary>The logger.</summary>
-    private readonly ILogger<InnHandlers> logger;
-
-    /// <summary>Keeps the services and drops a player's rest offer when they leave their map.</summary>
-    /// <param name="world">The world state, used to find the team members and their sessions.</param>
-    /// <param name="maps">The map data, used to find the npc of the running event.</param>
-    /// <param name="logger">The logger.</param>
-    public InnHandlers(
-        WorldState world,
-        MapData maps,
-        ILogger<InnHandlers> logger)
-    {
-        (this.world, this.maps, this.logger) = (world, maps, logger);
-        world.MapLeaving += Withdraw;
-    }
+    /// <summary>Drops a player's rest offer when they leave their map.</summary>
+    internal void Start() => world.MapLeaving += Withdraw;
 
     /// <summary>Drops the player's rest offer, if any.</summary>
     /// <param name="session">The player's session.</param>

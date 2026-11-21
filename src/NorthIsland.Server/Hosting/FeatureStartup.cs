@@ -70,7 +70,7 @@ internal static class FeatureStartup
         _ = services.GetRequiredService<PotentialHandlers>();
         _ = services.GetRequiredService<AtmHandlers>();
         _ = services.GetRequiredService<WarehouseHandlers>();
-        _ = services.GetRequiredService<InnHandlers>();
+        services.GetRequiredService<InnHandlers>().Start();
         _ = services.GetRequiredService<TradeHandlers>();
         services.GetRequiredService<BattleHandlers>().Start();
         _ = services.GetRequiredService<StatHandlers>();
