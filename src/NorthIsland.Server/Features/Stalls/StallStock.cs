@@ -18,6 +18,31 @@ public static class StallStock
             ? stack
             : null;
 
+    /// <summary>
+    /// Tells why a bag stack may not go to a buyer from a stall: its item cannot be traded or has a pose (<see cref="Bag.IsNoTrade"/>), or a magic
+    /// crystal stone that cannot be passed on is set into it, as the client's item stall and the house shops refuse.
+    /// </summary>
+    /// <param name="items">The item data, for the flags.</param>
+    /// <param name="stack">The bag stack.</param>
+    /// <returns>The reason for the log, or null when the stack may be sold.</returns>
+    public static string? Untransferable(ItemData items, BagItem stack) =>
+        Bag.IsNoTrade(items, stack) ? "cannot be traded"
+            : stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable ? "its crystal stone cannot be passed on"
+                : null;
+
+    /// <summary>
+    /// Tells why a bag slot may not be priced in a stall that is opening: the slot is empty, its stack may not go to a buyer
+    /// (<see cref="Untransferable"/>), or the slot is committed elsewhere (<see cref="BagLocks.LockedBy"/>: offered in a trade, loaded for the pet
+    /// express, listed on a house shelf, the vehicle in use).
+    /// </summary>
+    /// <param name="items">The item data, for the flags.</param>
+    /// <param name="session">The owner's session, who has no stall open yet.</param>
+    /// <param name="stack">The stack in the slot, or null when the slot is empty.</param>
+    /// <param name="slot">The bag slot.</param>
+    /// <returns>The reason for the log, or null when the slot may be priced.</returns>
+    public static string? OpenRefusal(ItemData items, GameSession session, BagItem? stack, byte slot) =>
+        stack is null ? "the slot is empty" : Untransferable(items, stack) ?? BagLocks.LockedBy(session, slot);
+
     /// <summary>Takes a copy of a stack to remember what a stall offers in a slot.</summary>
     /// <param name="stack">The bag stack.</param>
     /// <returns>The copy, not in any grid.</returns>

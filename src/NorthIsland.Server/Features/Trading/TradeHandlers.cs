@@ -119,8 +119,8 @@ public sealed class TradeHandlers(
 
     /// <summary>
     /// Records the player's offer of gold and bag stacks and shows it to the partner (<c>25/2</c>, <c>25/41</c>). The offer keeps a copy of each
-    /// stack, and any offer clears the confirmation of both sides, so each confirms what the other offers now. An offer they cannot make cancels
-    /// the trade.
+    /// stack. An offer they cannot make cancels the trade, and so does an offer made once either side has confirmed, which the client never sends:
+    /// its windows stay locked as agreed, so the trade ends for both rather than going on with a stale confirmation.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the offered gold and bag slots.</param>
@@ -150,18 +150,33 @@ public sealed class TradeHandlers(
         }
 
         GameSession partner;
+        var late = false;
         lock (trade.Lock)
         {
             if (trade.Closed)
                 return ValueTask.CompletedTask;
-            var side = trade.Of(session);
-            side.Gold = offer.Gold;
-            side.Stacks.Clear();
-            side.Stacks.AddRange(stacks.Select(s => GridStore.Copy(s!, s!.Slot, s.Count)));
-            side.Offered = true;
-            trade.First.Confirmed = false;
-            trade.Second.Confirmed = false;
             partner = trade.PartnerOf(session).Session;
+            if (trade.First.Confirmed || trade.Second.Confirmed)
+            {
+                late = true;
+                Close(trade);
+            }
+            else
+            {
+                var side = trade.Of(session);
+                side.Gold = offer.Gold;
+                side.Stacks.Clear();
+                side.Stacks.AddRange(stacks.Select(s => GridStore.Copy(s!, s!.Slot, s.Count)));
+                side.Offered = true;
+            }
+        }
+        if (late)
+        {
+            logger.LogWarning("[{Session}] {Name}: trade cancelled, offer changed after a side confirmed", session.Id, character.Name);
+            var cancelled = ResultPacket(trade, TradeResult.Cancelled, null);
+            session.Send(cancelled);
+            partner.Send(cancelled);
+            return ValueTask.CompletedTask;
         }
         partner.Send(trade.Large
             ? TradeMessages.LargeOffer(offer.Gold, stacks.Select(s => (s!.ItemId, s.Used, s.Extra, s.Wear)))
@@ -358,7 +373,10 @@ public sealed class TradeHandlers(
         return stacks;
     }
 
-    /// <summary>Tells why a bag stack cannot be offered in a trade: there is none, its item cannot be given, or it is the ridden vehicle.</summary>
+    /// <summary>
+    /// Tells why a bag stack cannot be offered in a trade: there is none, its item cannot be given, it is the ridden vehicle, or the slot is
+    /// committed somewhere other than this trade (<see cref="LockedOutsideTrade"/>).
+    /// </summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="stack">The stack in the offered slot, or null when the slot is empty.</param>
     /// <returns>The reason for the log, or null when the stack may be offered.</returns>
@@ -366,7 +384,24 @@ public sealed class TradeHandlers(
         stack is null ? "the slot is empty"
             : Bag.IsNoTrade(items, stack) ? "the item cannot be traded"
                 : session.Vehicle?.BagSlot == stack.Slot ? "the stack is the ridden vehicle"
-                    : null;
+                    : LockedOutsideTrade(session, stack.Slot);
+
+    /// <summary>
+    /// Tells what a bag slot is committed to besides the player's own trade offer, which <see cref="BagLocks.LockedBy"/> reports first and so
+    /// would hide the rest: priced in the item stall or the utensil stall, loaded for the pet express, or listed on a house shelf or vending
+    /// machine.
+    /// </summary>
+    /// <param name="session">The owner's session.</param>
+    /// <param name="slot">The bag slot.</param>
+    /// <returns>The reason for the log, or null when nothing else holds the slot.</returns>
+    private static string? LockedOutsideTrade(GameSession session, byte slot) =>
+        session.Stalls.Items?.Prices.ContainsKey(slot) == true ? "the stack is priced in the item stall"
+            : session.Stalls.Utensils?.Prices.ContainsKey(slot) == true ? "the stack is priced in the utensil stall"
+                : session.PetJobs.Express?.Stacks.Exists(s => s.Slot == slot) == true ? "the stack is loaded for the pet express"
+                    : session.ActiveCharacter is { } c && c.Furniture.Exists(
+                        f => f.ItemId is HomeShopHandlers.Shelf or HomeShopHandlers.VendingMachine && f.Stock.Exists(s => s.BagCell == slot))
+                        ? "the stack is listed on a house shelf"
+                        : null;
 
     /// <summary>Describes stacks as item names with counts, for the log.</summary>
     /// <param name="stacks">The stacks.</param>

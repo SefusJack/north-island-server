@@ -44,11 +44,16 @@ public sealed class StallHandlers(
         while (r.Remaining >= 5 && stall.Prices.Count < MaxItems)
         {
             var (slot, price) = (r.U8(), r.I32());
-            if (price > 0 && character.Bag.Find(b => b.Slot == slot) is { } priced && !Bag.IsNoTrade(items, priced) && session.Vehicle?.BagSlot != slot)
+            var priced = character.Bag.Find(b => b.Slot == slot);
+            if (price <= 0)
+                continue;
+            if (StallStock.OpenRefusal(items, session, priced, slot) is { } why)
             {
-                stall.Prices[slot] = price;
-                stall.Offered[slot] = StallStock.Snapshot(priced);
+                logger.LogWarning("[{Session}] {Name}: bag slot {Slot} left out of the stall: {Why}", session.Id, character.Name, slot, why);
+                continue;
             }
+            stall.Prices[slot] = price;
+            stall.Offered[slot] = StallStock.Snapshot(priced!);
         }
         if (stall.Prices.Count == 0 || stall.Name.Length == 0)
         {
@@ -129,7 +134,7 @@ public sealed class StallHandlers(
                 var why = !priced || offered is null ? "not on offer"
                     : stack is null ? "no longer the stack the stall opened with"
                         : stack.ItemId != itemId || count == 0 || count > stack.Count ? "not that many of that item"
-                            : Bag.IsNoTrade(items, stack) ? "cannot be traded"
+                            : StallStock.Untransferable(items, stack) is { } untransferable ? untransferable
                                 : !StallView.Saw(session.Stalls.SeenItems, stall, slot, price) ? "not the price the buyer was shown"
                                     : null;
                 if (why is not null)
@@ -211,7 +216,7 @@ public sealed class StallHandlers(
         var shown = stall.Prices
             .Select(p => (Slot: p.Key, Price: p.Value,
                 Stack: stall.Offered.TryGetValue(p.Key, out var offered) ? StallStock.Find(seller, owner, p.Key, offered) : null))
-            .Where(x => x.Stack is not null && !Bag.IsNoTrade(items, x.Stack))
+            .Where(x => x.Stack is not null && StallStock.Untransferable(items, x.Stack) is null)
             .ToList();
         session.Stalls.SeenItems = new StallView(stall, shown.ToDictionary(x => x.Slot, x => x.Price));
         session.Send(StallMessages.Items(ownerId, shown.Select(x => new StallItem(x.Slot, x.Stack!.ItemId, x.Stack.Count, x.Stack.Wear, x.Price)),

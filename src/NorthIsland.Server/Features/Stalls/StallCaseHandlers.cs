@@ -266,7 +266,10 @@ public sealed class StallCaseHandlers(
             s.Send(packet);
     }
 
-    /// <summary>Handles a purchase from a case: checks price, gold and bag room, then moves items and gold and tells the house.</summary>
+    /// <summary>
+    /// Handles a purchase from a case: checks the buyer stands in the owner's house with the owner there, then price, gold and bag room, then moves
+    /// items and gold and tells the house.
+    /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The packet body: the owner's login id, case number, count and the price the buyer saw.</param>
     internal ValueTask OnBuy(GameSession session, ReadOnlyMemory<byte> body)
@@ -277,8 +280,12 @@ public sealed class StallCaseHandlers(
         var caseNo = (byte)Math.Min(255, (int)BinaryPrimitives.ReadUInt16LittleEndian(body.Span[4..]));
         var count = body.Span[6];
         var price = BinaryPrimitives.ReadInt32LittleEndian(body.Span[7..]);
-        if (tents.OwnerById(ownerId) is not { Session: { } ownerSession } owner || owner.Character.MapId != me.MapId || ownerId == session.Account.LoginId)
+        if (ownerId == session.Account.LoginId || tents.HouseOwnerFor(me, ownerId) is not { Session: { } ownerSession } owner
+            || owner.Character.MapId != me.MapId)
+        {
+            logger.LogWarning("[{Session}] {Name}: stall case buy refused, not in the house of {Owner} with its owner there", session.Id, me.Name, ownerId);
             return ValueTask.CompletedTask;
+        }
         var oc = owner.Character;
         var stall = oc.StallCases.Find(x => x.Case == caseNo);
         if (stall is null || count == 0 || count > stall.Stock)

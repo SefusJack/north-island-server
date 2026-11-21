@@ -32,11 +32,14 @@ public sealed class UtensilStallHandlers(
         world.Broadcast(session, packet, sameMapOnly: true);
     }
 
-    /// <summary>Tells whether a bag stack may go into the stall: it takes more than one cell or is a vehicle, and flag 2 is not set.</summary>
+    /// <summary>
+    /// Tells whether a bag stack may go into the stall: it takes more than one cell or is a vehicle (equip slot 7), and it may go to a buyer
+    /// (<see cref="StallStock.Untransferable"/>).
+    /// </summary>
     /// <param name="stack">The bag stack.</param>
     /// <returns>True when the stack can be offered.</returns>
     private bool Stallable(BagItem stack) =>
-        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.EquipSlot == 7) && (r.Flags & 2) == 0;
+        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.EquipSlot == 7) && StallStock.Untransferable(items, stack) is null;
 
     /// <summary>Opens a large item stall from the player's list of priced bag slots.</summary>
     /// <param name="session">The player's session.</param>
@@ -55,11 +58,17 @@ public sealed class UtensilStallHandlers(
         while (r.Remaining >= 5 && stall.Prices.Count < MaxItems)
         {
             var (slot, price) = (r.U8(), r.I32());
-            if (price > 0 && character.Bag.Find(b => b.Slot == slot) is { } stack && Stallable(stack) && session.Vehicle?.BagSlot != slot)
+            var stack = character.Bag.Find(b => b.Slot == slot);
+            if (price <= 0)
+                continue;
+            var why = StallStock.OpenRefusal(items, session, stack, slot) ?? (Stallable(stack!) ? null : "cannot be sold in a large-item stall");
+            if (why is not null)
             {
-                stall.Prices[slot] = price;
-                stall.Offered[slot] = StallStock.Snapshot(stack);
+                logger.LogWarning("[{Session}] {Name}: bag slot {Slot} left out of the large-item stall: {Why}", session.Id, character.Name, slot, why);
+                continue;
             }
+            stall.Prices[slot] = price;
+            stall.Offered[slot] = StallStock.Snapshot(stack!);
         }
         if (stall.Prices.Count == 0 || stall.Name.Length == 0)
         {
