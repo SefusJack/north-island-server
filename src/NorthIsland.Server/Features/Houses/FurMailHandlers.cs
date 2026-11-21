@@ -24,7 +24,7 @@ public sealed class FurMailHandlers(
     /// <summary>Longest letter text in characters, as the client's letter form allows (views/mail/FurMailWindow.xml).</summary>
     public const int MaxText = 152;
 
-    /// <summary>The most letters a box keeps for a character when <see cref="HouseLifeOptions.FurMailCapacity"/> is 0 (no limit set).</summary>
+    /// <summary>The most letters a box keeps for a character when <see cref="HouseLifeOptions.FurMailCapacity"/> is 0 or less.</summary>
     public const int DefaultCapacity = 100;
 
     /// <summary>Whether a character has a Mailbox placed.</summary>
