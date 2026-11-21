@@ -30,7 +30,8 @@ public static class GridStore
 
     /// <summary>
     /// Whether a stack carries nothing beyond its item id, count and wear: no stone, fusion level, pose, used or extra amount or box. Stores that
-    /// keep only those (a stall case, a furniture box) take only such stacks, so nothing the stack carries is lost or reset on the way back.
+    /// keep no more than those (a stall case; a furniture box, which keeps no wear either and gives the items back at wear 1) take only such stacks,
+    /// so nothing else the stack carries is lost or reset on the way back.
     /// </summary>
     /// <param name="stack">The stack.</param>
     /// <returns>True when the stack has no other attribute set.</returns>
