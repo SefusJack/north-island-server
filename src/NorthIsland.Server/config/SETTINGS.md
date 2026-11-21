@@ -507,10 +507,10 @@ of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common, themed | 3 foods (5 each, pizzas 2) or Wishing Coins (1100 each, 33%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
+| Common, themed | a food (5, pizzas 2) and a Wishing Coin (1650 each, 33%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
 | Common, fixed | Carnie Token ×3 (1000, 10%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); the event's common forging scroll ×3 (400, 4%) and uncommon forging scroll ×2, Small Demon ×1 (250, 2.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); the event's rare forging scroll (100, 1%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (195, 1.95%), a Silver Card (75, 0.75%) and a Golden Card (5, 0.05%) |
-| Big, themed | 4 rares (100 each, 40%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
-| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); the event's uncommon forging scroll ×3, Small Demon ×2 (60, 6%), its rare forging scroll ×2 (60, 6%) and Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (45, 4.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
+| Big, themed | 4 rares (115 each, 46%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
+| Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); the event's rare forging scroll ×2 (60, 6%) and Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (45, 4.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
 
 At 20 kills a minute that is about 1.2 Alchemy Book 1s, 1 Book 2, 0.8 Book 3s and 0.6 Book 4s an hour, a
 Strong Scroll or a Pet Lethe Scroll every 3 hours, a Seraph Scroll every 22 hours and the event's uncommon diamond every 3
@@ -526,10 +526,17 @@ hours. Each event has one diamond of each rarity, and the events take turns thro
 The forging scrolls work the same way: each event has one scroll of each rarity, and the Seraph Scroll (100%) is every
 event's jackpot scroll.
 
+No bag has two prizes of the same family in one tier, and no prize twice. A family is what the item does: every pet amity
+item (the Amity Jellies, Spring and Bless Jelly, Love Picnic Lunch, Love Bouquets: Item.dat effect 64), foods, fireworks,
+throwables (snowballs, Water Ball, Lantern Cannon), gems (diamonds and spars), Bomb Diamonds, forging scrolls, Wit Maid
+suits, ears boxes, wing boxes, weapon boxes, random gift boxes, door vouchers, gear combiners, saddles, outfits, hats,
+furniture, EXP items and hammers; anything else is its own family. The four Alchemy Books are the one exception (their
+chances were set on purpose), and the 2013 Big Turkey is a bag of food.
+
 | Rarity | Scrolls | Events |
 |---|---|---|
 | Common (common bag ×3) | Demon 50%, Principality 60% | Demon: Winter Festival, Valentine's Day, White Day, Anniversary, Summer, Mid-Autumn Festival, Thanksgiving, New Year; Principality: Chinese New Year, Lantern Festival, Spring Festival, Dragon Boat Festival, Artisan Festival, Halloween, Christmas |
-| Uncommon (common bag ×2, big bag ×3) | Archangel 65%, Virtues 70%, Small Demon 50% for +4 (×1 and ×2) | Archangel: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Virtues: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Small Demon: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
+| Uncommon (common bag ×2) | Archangel 65%, Virtues 70%, Small Demon 50% for +4 (×1) | Archangel: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Virtues: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Small Demon: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
 | Rare (common bag ×1, big bag ×2) | Ofanim 80%, Cherubim 90% | Ofanim: Winter Festival, Chinese New Year, White Day, Spring Festival, Summer, Artisan Festival, Thanksgiving, Christmas; Cherubim: Valentine's Day, Lantern Festival, Anniversary, Dragon Boat Festival, Mid-Autumn Festival, Halloween, New Year |
 Travel items aren't prizes (Bamboo Dragonfly, Teleport Scroll, GPS, Memory Crystal, also taken out of the War Pack, the
 Scroll Pack and the Thanksgiving Egg in `Data/MallBoxes.tsv`); the Yacht Voucher is only a top prize.
