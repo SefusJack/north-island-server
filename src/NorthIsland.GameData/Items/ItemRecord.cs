@@ -70,7 +70,8 @@ public sealed record ItemRecord
     /// Who may wear the item, at offset 128 (the client's FUsableBy). Players (the client's canWear): 1 body types 1 and 3; 2 body types 2 and 4;
     /// 4 to 7 body type 1 to 4; 12 the Wind element; 8, 9 and 13 no player; any other value (0, 3, 10, 11, ...) anyone. Pets (the client's
     /// petEquipRefusal): 0 and 8 any pet; 9 and 10 pets of direction kind 0; 11 and 13 pets of direction kind 1; 12 Wind pets; any other value no
-    /// pet, except a saddle.
+    /// pet. Whatever the value, a saddle on a pet of direction kind other than 0 always fits. An item that names a pet (<see cref="PetNpcId"/>
+    /// not 0) skips this field for players and pets: no player wears it, and only the pet it names (or its career form) does.
     /// </summary>
     public byte UsableBy { get; init; }
 
