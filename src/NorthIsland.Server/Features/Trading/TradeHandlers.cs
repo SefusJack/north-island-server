@@ -119,8 +119,9 @@ public sealed class TradeHandlers(
 
     /// <summary>
     /// Records the player's offer of gold and bag stacks and shows it to the partner (<c>25/2</c>, <c>25/41</c>). The offer keeps a copy of each
-    /// stack. An offer they cannot make cancels the trade, and so does an offer made once either side has confirmed, which the client never sends:
-    /// its windows stay locked as agreed, so the trade ends for both rather than going on with a stale confirmation.
+    /// stack. An offer they cannot make cancels the trade, and so does a changed offer once either side has confirmed: the trade ends for both
+    /// rather than going on with a stale confirmation. A side's first offer is taken even after the partner confirmed, since the large-item trade
+    /// window shows its Trade button as soon as the player's own offer is sent, before the partner has offered.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the offered gold and bag slots.</param>
@@ -156,7 +157,7 @@ public sealed class TradeHandlers(
             if (trade.Closed)
                 return ValueTask.CompletedTask;
             partner = trade.PartnerOf(session).Session;
-            if (trade.First.Confirmed || trade.Second.Confirmed)
+            if (trade.Of(session).Offered && (trade.First.Confirmed || trade.Second.Confirmed)) // a re-offer; a side confirms only after offering
             {
                 late = true;
                 Close(trade);
@@ -187,8 +188,8 @@ public sealed class TradeHandlers(
     }
 
     /// <summary>
-    /// Confirms or cancels the trade (<c>25/3</c>, <c>25/42</c>). When both sides have confirmed the trade is carried out and both are told the
-    /// result.
+    /// Confirms or cancels the trade (<c>25/3</c>, <c>25/42</c>). When both sides have confirmed the trade is carried out under the partner's
+    /// session gate and both are told the result; when that gate cannot be taken the trade is cancelled for both.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: u8, 1 to confirm, anything else to cancel.</param>
@@ -203,7 +204,6 @@ public sealed class TradeHandlers(
             return ValueTask.CompletedTask;
         }
 
-        TradeResult? result = null;
         lock (trade.Lock)
         {
             if (trade.Closed)
@@ -212,17 +212,39 @@ public sealed class TradeHandlers(
             if (!side.Offered)
                 return ValueTask.CompletedTask;
             side.Confirmed = true;
-            if (trade.First.Confirmed && trade.Second.Confirmed)
+            if (!trade.First.Confirmed || !trade.Second.Confirmed || trade.Settling)
+                return ValueTask.CompletedTask;
+            trade.Settling = true;
+        }
+
+        var partner = trade.PartnerOf(session).Session;
+        TradeResult result;
+        if (!partner.TryExclusiveFrom(session, out var held))
+        {
+            lock (trade.Lock)
             {
-                result = Execute(trade);
+                if (trade.Closed)
+                    return ValueTask.CompletedTask;
                 Close(trade);
             }
+            logger.LogWarning("[{Session}] trade cancelled: the partner's session is busy", session.Id);
+            result = TradeResult.Cancelled;
         }
-        if (result is { } r)
+        else
         {
-            trade.First.Session.Send(ResultPacket(trade, r, trade.First));
-            trade.Second.Session.Send(ResultPacket(trade, r, trade.Second));
+            using (held)
+            {
+                lock (trade.Lock)
+                {
+                    if (trade.Closed)
+                        return ValueTask.CompletedTask;
+                    result = Execute(trade);
+                    Close(trade);
+                }
+            }
         }
+        trade.First.Session.Send(ResultPacket(trade, result, trade.First));
+        trade.Second.Session.Send(ResultPacket(trade, result, trade.Second));
         return ValueTask.CompletedTask;
     }
 
@@ -230,7 +252,7 @@ public sealed class TradeHandlers(
     /// Carries out a confirmed trade: checks gold, that each offered slot still holds the very stack offered and may still be given, and room on
     /// both sides, then moves the stacks and the gold difference.
     /// </summary>
-    /// <param name="trade">The trade, locked by the caller.</param>
+    /// <param name="trade">The trade, locked by the caller, who holds both sessions' gates.</param>
     /// <returns>The result sent to both players.</returns>
     private TradeResult Execute(Trade trade)
     {

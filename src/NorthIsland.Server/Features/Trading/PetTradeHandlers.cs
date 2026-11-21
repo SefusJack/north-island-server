@@ -72,8 +72,9 @@ public sealed class PetTradeHandlers(
 
     /// <summary>
     /// Records the player's offer (<c>25/11</c>) and shows it to the partner. The offer keeps the pet itself. An offer of too much gold or a pet
-    /// that may not go (<see cref="PetTransfer.Refusal"/>) cancels the trade, and so does an offer made once either side has confirmed, which the
-    /// client never sends: its windows stay locked as agreed, so the trade ends for both rather than going on with a stale confirmation.
+    /// that may not go (<see cref="PetTransfer.Refusal"/>) cancels the trade, and so does a changed offer once either side has confirmed: the
+    /// trade ends for both rather than going on with a stale confirmation. A side's first offer is taken even after the partner confirmed, as in
+    /// the item trade.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: i32 gold, optionally u8 pet slot (0 for no pet).</param>
@@ -104,7 +105,7 @@ public sealed class PetTradeHandlers(
             if (trade.Closed)
                 return ValueTask.CompletedTask;
             partner = trade.PartnerOf(session).Session;
-            if (trade.First.Confirmed || trade.Second.Confirmed)
+            if (trade.Of(session).Offered && (trade.First.Confirmed || trade.Second.Confirmed)) // a re-offer; a side confirms only after offering
             {
                 late = true;
                 Close(trade);
@@ -130,7 +131,8 @@ public sealed class PetTradeHandlers(
     }
 
     /// <summary>
-    /// Confirms or cancels the trade (<c>25/12</c>). When both sides have confirmed the trade is carried out and both are told the result.
+    /// Confirms or cancels the trade (<c>25/12</c>). When both sides have confirmed the trade is carried out under the partner's session gate and
+    /// both are told the result; when that gate cannot be taken the trade is cancelled for both.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: u8, 1 to confirm, anything else to cancel.</param>
@@ -144,7 +146,6 @@ public sealed class PetTradeHandlers(
             session.Send(PetTradeMessages.Result(PetTradeResult.Cancelled));
             return ValueTask.CompletedTask;
         }
-        PetTradeResult? result = null;
         lock (trade.Lock)
         {
             if (trade.Closed)
@@ -153,17 +154,39 @@ public sealed class PetTradeHandlers(
             if (!side.Offered)
                 return ValueTask.CompletedTask;
             side.Confirmed = true;
-            if (trade.First.Confirmed && trade.Second.Confirmed)
+            if (!trade.First.Confirmed || !trade.Second.Confirmed || trade.Settling)
+                return ValueTask.CompletedTask;
+            trade.Settling = true;
+        }
+
+        var partner = trade.PartnerOf(session).Session;
+        PetTradeResult result;
+        if (!partner.TryExclusiveFrom(session, out var held))
+        {
+            lock (trade.Lock)
             {
-                result = Execute(trade);
+                if (trade.Closed)
+                    return ValueTask.CompletedTask;
                 Close(trade);
             }
+            logger.LogWarning("[{Session}] pet trade cancelled: the partner's session is busy", session.Id);
+            result = PetTradeResult.Cancelled;
         }
-        if (result is { } r)
+        else
         {
-            trade.First.Session.Send(PetTradeMessages.Result(r));
-            trade.Second.Session.Send(PetTradeMessages.Result(r));
+            using (held)
+            {
+                lock (trade.Lock)
+                {
+                    if (trade.Closed)
+                        return ValueTask.CompletedTask;
+                    result = Execute(trade);
+                    Close(trade);
+                }
+            }
         }
+        trade.First.Session.Send(PetTradeMessages.Result(result));
+        trade.Second.Session.Send(PetTradeMessages.Result(result));
         return ValueTask.CompletedTask;
     }
 
@@ -171,7 +194,7 @@ public sealed class PetTradeHandlers(
     /// Carries out a confirmed trade: checks the gold is still there and fits under the purse limit, that each offered pet is the same pet, still
     /// in the team and still tradable, and that the pets fit, then swaps the pets and moves the gold difference.
     /// </summary>
-    /// <param name="trade">The trade, locked by the caller.</param>
+    /// <param name="trade">The trade, locked by the caller, who holds both sessions' gates.</param>
     /// <returns>The result sent to both players.</returns>
     private PetTradeResult Execute(Trade trade)
     {
