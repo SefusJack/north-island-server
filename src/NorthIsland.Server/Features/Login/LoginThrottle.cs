@@ -5,9 +5,12 @@ using Microsoft.Extensions.Options;
 namespace NorthIsland.Server.Features.Login;
 
 /// <summary>
-/// Slows down password guessing and mass registration: too many failed logins of one account name or from one address lock further logins of
-/// that name or address out for a while, and one address may auto-register only a few accounts per hour. Loopback addresses have no address
-/// limits (the server's own test tools), but their logins still count for the account name.
+/// Slows down password guessing and mass registration. Too many failed logins of one account name from one address lock that name out for that
+/// address only, so that nobody can lock an account out for its owner; too many failed logins from one address, of any names, lock the address
+/// out. Across all addresses, an account name that failed too often only makes each of its logins wait <see cref="NameBrakeMs"/> before the
+/// password is checked, which slows a guesser on many addresses but never refuses a login. One address may auto-register only a few accounts
+/// per hour. Loopback addresses have no address lockout and no registration limit (the server's own test tools), but their failures still lock
+/// the name out for the loopback address and count for the name's brake.
 /// </summary>
 /// <param name="options">The server options: the failures before a lockout, the lockout time and the registrations per hour.</param>
 public sealed class LoginThrottle(
@@ -22,10 +25,16 @@ public sealed class LoginThrottle(
     /// <summary>The calls between two sweeps of the entries whose window and lockout are over.</summary>
     private const int SweepEvery = 1024;
 
+    /// <summary>The milliseconds each login of an account name waits once the name has failed too often from all addresses together.</summary>
+    public const int NameBrakeMs = 1000; // one second: barely felt by the owner, a tenfold slowdown of a guesser's tries
+
     /// <summary>The server options, read once at construction.</summary>
     private readonly ServerOptions _options = options.Value;
 
-    /// <summary>The failed logins by account name, ignoring case.</summary>
+    /// <summary>The failed logins by account name (lower case) and client address; the unknown address counts as <see cref="IPAddress.None"/>.</summary>
+    private readonly ConcurrentDictionary<(string Name, IPAddress Address), Strikes> _byNameAndAddress = new();
+
+    /// <summary>The failed logins by account name from all addresses together, ignoring case; they only brake, never lock out.</summary>
     private readonly ConcurrentDictionary<string, Strikes> _byName = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The failed logins by client address.</summary>
@@ -40,33 +49,56 @@ public sealed class LoginThrottle(
     /// <summary>The milliseconds of the failure window and of a lockout.</summary>
     private long LockoutMs => Math.Max(1, _options.LoginLockoutSeconds) * MsPerSecond;
 
-    /// <summary>Gives the seconds left of a lockout of the account name or the address.</summary>
+    /// <summary>Gives the seconds left of a lockout of the account name for the address, or of the address.</summary>
     /// <param name="name">The account name.</param>
     /// <param name="address">The client address, or null when it is not known.</param>
     /// <returns>The seconds until logins are let in again; 0 when they are not locked out.</returns>
     public int LockedSeconds(string name, IPAddress? address)
     {
         var now = Environment.TickCount64;
-        var left = Math.Max(LeftMs(_byName, name, now), Limited(address) is { } a ? LeftMs(_byAddress, a, now) : 0);
+        var left = Math.Max(LeftMs(_byNameAndAddress, Key(name, address), now), Limited(address) is { } a ? LeftMs(_byAddress, a, now) : 0);
         return (int)((left + MsPerSecond - 1) / MsPerSecond); // rounded up to whole seconds
     }
 
-    /// <summary>Counts a failed login of an account name from an address, locking either out once it reaches the failures before a lockout.</summary>
+    /// <summary>Gives how long a login of an account name waits before its password is checked.</summary>
+    /// <param name="name">The account name.</param>
+    /// <returns><see cref="NameBrakeMs"/> once the name has had the failures before a lockout from all addresses in the window; otherwise 0.</returns>
+    public int BrakeMs(string name) =>
+        _byName.TryGetValue(name, out var strikes) && strikes.InWindow(Environment.TickCount64, LockoutMs) >= FailureLimit ? NameBrakeMs : 0;
+
+    /// <summary>
+    /// Counts a failed login of an account name from an address: locks the name out for the address, or the address out, once either reaches the
+    /// failures before a lockout, and counts the failure for the name's brake.
+    /// </summary>
     /// <param name="name">The account name.</param>
     /// <param name="address">The client address, or null when it is not known.</param>
     public void Failed(string name, IPAddress? address)
     {
         var now = Environment.TickCount64;
-        var limit = Math.Max(1, _options.LoginFailuresBeforeLockout);
-        _byName.GetOrAdd(name, static _ => new Strikes()).Count(now, LockoutMs, limit, LockoutMs);
+        _byNameAndAddress.GetOrAdd(Key(name, address), static _ => new Strikes()).Count(now, LockoutMs, FailureLimit, LockoutMs);
+        _byName.GetOrAdd(name, static _ => new Strikes()).Add(now, LockoutMs);
         if (Limited(address) is { } a)
-            _byAddress.GetOrAdd(a, static _ => new Strikes()).Count(now, LockoutMs, limit, LockoutMs);
+            _byAddress.GetOrAdd(a, static _ => new Strikes()).Count(now, LockoutMs, FailureLimit, LockoutMs);
         SweepNow(now);
     }
 
-    /// <summary>Forgets the failed logins of an account name after a successful login.</summary>
+    /// <summary>
+    /// Forgets the failed logins of an account name from an address after a successful login from there; the failures from other addresses
+    /// still count for them and for the name's brake.
+    /// </summary>
     /// <param name="name">The account name.</param>
-    public void Succeeded(string name) => _byName.TryRemove(name, out _);
+    /// <param name="address">The client address, or null when it is not known.</param>
+    public void Succeeded(string name, IPAddress? address) => _byNameAndAddress.TryRemove(Key(name, address), out _);
+
+    /// <summary>The failures that start a lockout, at least 1.</summary>
+    private int FailureLimit => Math.Max(1, _options.LoginFailuresBeforeLockout);
+
+    /// <summary>Gives the key of an account name and an address in <see cref="_byNameAndAddress"/>.</summary>
+    /// <param name="name">The account name.</param>
+    /// <param name="address">The client address, or null when it is not known.</param>
+    /// <returns>The name in lower case and the address, IPv4 when it is mapped to IPv6, or <see cref="IPAddress.None"/> when it is not known.</returns>
+    private static (string Name, IPAddress Address) Key(string name, IPAddress? address) =>
+        (name.ToLowerInvariant(), address is null ? IPAddress.None : address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);
 
     /// <summary>Counts an auto-registration from an address when the address has not used up its registrations of the past hour.</summary>
     /// <param name="address">The client address, or null when it is not known.</param>
@@ -101,6 +133,7 @@ public sealed class LoginThrottle(
     {
         if (Interlocked.Increment(ref _sinceSweep) % SweepEvery != 0)
             return;
+        Sweep(_byNameAndAddress, now, LockoutMs);
         Sweep(_byName, now, LockoutMs);
         Sweep(_byAddress, now, LockoutMs);
         Sweep(_registrations, now, RegistrationWindowMs);
@@ -150,6 +183,28 @@ public sealed class LoginThrottle(
                 _count = 0;
                 _lockedUntilMs = now + lockoutMs;
             }
+        }
+
+        /// <summary>Counts an event in the current window, without a lockout.</summary>
+        /// <param name="now">The current <see cref="Environment.TickCount64"/>.</param>
+        /// <param name="windowMs">The window in milliseconds.</param>
+        public void Add(long now, long windowMs)
+        {
+            lock (_lock)
+            {
+                StartWindow(now, windowMs);
+                _count++;
+            }
+        }
+
+        /// <summary>Gives the events counted in the current window.</summary>
+        /// <param name="now">The current <see cref="Environment.TickCount64"/>.</param>
+        /// <param name="windowMs">The window in milliseconds.</param>
+        /// <returns>The events; 0 once the window is over.</returns>
+        public int InWindow(long now, long windowMs)
+        {
+            lock (_lock)
+                return now - _windowStartMs < windowMs ? _count : 0;
         }
 
         /// <summary>Counts an event when the window does not yet hold the limit of events.</summary>

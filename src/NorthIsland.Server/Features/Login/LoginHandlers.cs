@@ -20,7 +20,7 @@ namespace NorthIsland.Server.Features.Login;
 /// <param name="formulas">Sets the initial values of a new character.</param>
 /// <param name="worldEntry">Sends the world-entry packets once a character is chosen.</param>
 /// <param name="bans">The account and address ban list checked at login.</param>
-/// <param name="throttle">Locks out logins after too many failures and limits the auto-registrations per address.</param>
+/// <param name="throttle">Locks out and brakes logins after too many failures and limits the auto-registrations per address.</param>
 /// <param name="options">
 /// Server options: server id, accepted client versions, spawn point, auto-registration and what follows character creation.
 /// </param>
@@ -93,7 +93,8 @@ public sealed partial class LoginHandlers(
             await store.SaveAsync(account).ConfigureAwait(false);
         }
         session.Send(new PacketWriter(Action35.Code, Action35.ChangeAccountPassword).U8(result).ToArray());
-        logger.LogInformation("[{Session}] {Name}: change account password -> {Result}", session.Id, account.Name, result);
+        if (MayLog(session))
+            logger.LogInformation("[{Session}] {Name}: change account password -> {Result}", session.Id, account.Name, result);
     }
 
     /// <summary>
@@ -115,7 +116,8 @@ public sealed partial class LoginHandlers(
             await store.SaveAsync(account).ConfigureAwait(false);
         }
         session.Send(new PacketWriter(Action35.Code, Action35.ChangePassword).U8(result).ToArray());
-        logger.LogInformation("[{Session}] {Name}: change secret code -> {Result}", session.Id, character.Name, result);
+        if (MayLog(session))
+            logger.LogInformation("[{Session}] {Name}: change secret code -> {Result}", session.Id, character.Name, result);
     }
 
     /// <summary>
@@ -128,7 +130,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.Connected)
         {
-            logger.LogInformation("[{Session}] action 0 in state {State} (kick acknowledge)", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogInformation("[{Session}] action 0 in state {State} (kick acknowledge)", session.Id, session.State);
             return ValueTask.CompletedTask;
         }
 
@@ -157,7 +160,8 @@ public sealed partial class LoginHandlers(
     }
 
     /// <summary>
-    /// Runs a login: checks the client version, the Item.Dat size, the name format, the bans and the lockouts, verifies the password (creating
+    /// Runs a login: checks the client version, the Item.Dat size, the name format, the bans and the lockouts, waits out the name's brake when it
+    /// failed too often from all addresses (<see cref="LoginThrottle.BrakeMs"/>), verifies the password (creating
     /// the account when auto-registration is on, the name is not a GmAccounts name and the address has registrations left), claims the account for
     /// the session and kicks its earlier session (in the world or at character select), clears the admin mode, makes a GmAccounts name a GM, then
     /// sends the login id and the character list. A wrong password or an unknown name counts towards the lockouts, and a connection whose logins
@@ -177,12 +181,16 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.AwaitLogin)
         {
-            logger.LogWarning("[{Session}] login in state {State}, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] login in state {State}, ignored", session.Id, session.State);
             return;
         }
 
-        logger.LogInformation("[{Session}] login '{Name}' version {Version} Item.Dat size {ItemDat}",
-            session.Id, LogText.Printable(name), version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
+        if (MayLog(session))
+        {
+            logger.LogInformation("[{Session}] login '{Name}' version {Version} Item.Dat size {ItemDat}",
+                session.Id, LogText.Printable(name), version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
+        }
 
         if (!_options.AcceptsClientVersion(version))
         {
@@ -203,16 +211,26 @@ public sealed partial class LoginHandlers(
         var address = session.RemoteEndPoint?.Address;
         if (bans.IsAccountBanned(name) || bans.IsAddressBanned(address))
         {
-            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: banned", session.Id, name, address);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: banned", session.Id, name, address);
             session.Send(ServerMessages.Locked(account: true, GmCommands.BanSeconds));
             return;
         }
         if (throttle.LockedSeconds(name, address) is var locked and > 0)
         {
-            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: locked out for {Seconds} s after failed logins",
-                session.Id, name, address, locked);
+            if (MayLog(session))
+            {
+                logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: locked out for {Seconds} s after failed logins",
+                    session.Id, name, address, locked);
+            }
             Refuse(session, ServerMessages.Locked(account: true, locked));
             return;
+        }
+        if (throttle.BrakeMs(name) is var brake and > 0)
+        {
+            await Task.Delay(brake).ConfigureAwait(false);
+            if (session.Closing)
+                return;
         }
 
         var account = await store.FindByNameAsync(name).ConfigureAwait(false);
@@ -221,15 +239,18 @@ public sealed partial class LoginHandlers(
         {
             if (!_options.AutoRegister || _options.ListsGm(name))
             {
-                if (_options.AutoRegister)
+                if (_options.AutoRegister && MayLog(session))
                     logger.LogWarning("[{Session}] login '{Name}' refused: a GmAccounts name is never registered by a login", session.Id, name);
                 Failed(session, name, address);
                 return;
             }
             if (!throttle.TryRegister(address))
             {
-                logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: the address registered its accounts for this hour",
-                    session.Id, name, address);
+                if (MayLog(session))
+                {
+                    logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: the address registered its accounts for this hour",
+                        session.Id, name, address);
+                }
                 Refuse(session, ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
                 return;
             }
@@ -249,7 +270,7 @@ public sealed partial class LoginHandlers(
             return;
         }
 
-        throttle.Succeeded(name);
+        throttle.Succeeded(name, address);
         session.Login.FailedLogins = 0;
         session.Account = account;
         session.AdminMode = false;
@@ -274,7 +295,8 @@ public sealed partial class LoginHandlers(
     private void Failed(GameSession session, string name, System.Net.IPAddress? address)
     {
         throttle.Failed(name, address);
-        logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: wrong account or password", session.Id, name, address);
+        if (MayLog(session))
+            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: wrong account or password", session.Id, name, address);
         Refuse(session, ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
     }
 
@@ -289,7 +311,8 @@ public sealed partial class LoginHandlers(
         session.Send(refusal);
         if (++session.Login.FailedLogins < Math.Max(1, _options.LoginFailuresPerConnection))
             return;
-        logger.LogWarning("[{Session}] {Count} failed logins on this connection; disconnected", session.Id, session.Login.FailedLogins);
+        if (MayLog(session))
+            logger.LogWarning("[{Session}] {Count} failed logins on this connection; disconnected", session.Id, session.Login.FailedLogins);
         session.Send(ServerMessages.Kick(KickReason.LoginFailedThreeTimes));
         session.Close();
     }
@@ -307,7 +330,8 @@ public sealed partial class LoginHandlers(
         {
             if (ReferenceEquals(previous, session))
                 continue;
-            logger.LogInformation("[{Session}] {Name} logged in again, kicking session {Previous}", session.Id, account.Name, previous.Id);
+            if (MayLog(session))
+                logger.LogInformation("[{Session}] {Name} logged in again, kicking session {Previous}", session.Id, account.Name, previous.Id);
             previous.Send(ServerMessages.Kick(KickReason.RepeatedLogin));
             previous.Close();
             world.Leave(previous);
@@ -325,9 +349,18 @@ public sealed partial class LoginHandlers(
     {
         if (sessions.Holds(session))
             return true;
-        logger.LogWarning("[{Session}] {What} from a session that no longer holds its account, ignored", session.Id, what);
+        if (MayLog(session))
+            logger.LogWarning("[{Session}] {What} from a session that no longer holds its account, ignored", session.Id, what);
         return false;
     }
+
+    /// <summary>
+    /// Takes a line from the session's budget of problem log lines (<see cref="GameSession.ProblemLog"/>), so that a client repeating a refused or
+    /// ignored packet cannot flood the log; logs first how many lines the budget held back.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <returns>True when the line may be logged.</returns>
+    private bool MayLog(GameSession session) => session.ProblemLog.TryTake(logger, session.Id);
 
     /// <summary>Sends the account's characters ordered by slot and moves the session to character select.</summary>
     /// <param name="session">The player's session.</param>
@@ -347,7 +380,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.CharacterSelect || session.Account is null)
         {
-            logger.LogWarning("[{Session}] 63/2 in state {State}, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 63/2 in state {State}, ignored", session.Id, session.State);
             return;
         }
         if (!HoldsAccount(session, "63/2"))
@@ -356,7 +390,8 @@ public sealed partial class LoginHandlers(
         var slot = SelectSlotRequest.Parse(body.Span).Slot;
         if (slot is < FirstSlot or > LastSlot)
         {
-            logger.LogWarning("[{Session}] 63/2 for slot {Slot}, refused", session.Id, slot);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 63/2 for slot {Slot}, refused", session.Id, slot);
             SendCharacterList(session);
             return;
         }
@@ -383,7 +418,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State is not (SessionState.AwaitLogin or SessionState.CharacterSelect or SessionState.Creating))
         {
-            logger.LogWarning("[{Session}] 63/0 in state {State}, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 63/0 in state {State}, ignored", session.Id, session.State);
             return ValueTask.CompletedTask;
         }
         if (session.State != SessionState.AwaitLogin)
@@ -403,7 +439,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.Creating)
         {
-            logger.LogWarning("[{Session}] 63/3 in state {State}, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 63/3 in state {State}, ignored", session.Id, session.State);
             return ValueTask.CompletedTask;
         }
         session.Login.PendingName = null;
@@ -420,7 +457,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.Creating)
         {
-            logger.LogWarning("[{Session}] 9/2 in state {State}, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 9/2 in state {State}, ignored", session.Id, session.State);
             return;
         }
 
@@ -449,7 +487,8 @@ public sealed partial class LoginHandlers(
     {
         if (session.State != SessionState.Creating || session.Account is null || session.Login.PendingName is not { } name)
         {
-            logger.LogWarning("[{Session}] 9/1 in state {State} without an accepted name, ignored", session.Id, session.State);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 9/1 in state {State} without an accepted name, ignored", session.Id, session.State);
             return;
         }
         if (!HoldsAccount(session, "9/1"))
@@ -460,7 +499,8 @@ public sealed partial class LoginHandlers(
         var slot = session.Login.SelectedSlot;
         if (InvalidCreation(req, slot) is { } reason)
         {
-            logger.LogWarning("[{Session}] 9/1 refused: {Reason}", session.Id, reason);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 9/1 refused: {Reason}", session.Id, reason);
             session.Login.PendingName = null;
             SendCharacterList(session);
             return;
@@ -488,8 +528,11 @@ public sealed partial class LoginHandlers(
             Unreserve(name, account.LoginId, slot);
         }
         session.Login.PendingName = null;
-        logger.LogInformation("[{Session}] created character '{Name}' in slot {Slot} for {Account}",
-            session.Id, character.Name, character.Slot, account.Name);
+        if (MayLog(session)) // a client may create and delete characters at will
+        {
+            logger.LogInformation("[{Session}] created character '{Name}' in slot {Slot} for {Account}",
+                session.Id, character.Name, character.Slot, account.Name);
+        }
 
         if (_options.AfterCreate == AfterCreate.EnterWorld)
             await worldEntry.EnterWorldAsync(session, character).ConfigureAwait(false);
@@ -597,7 +640,8 @@ public sealed partial class LoginHandlers(
             result = 4;
         else if (world.SessionOf(account.LoginId)?.ActiveCharacter == character)
         {
-            logger.LogWarning("[{Session}] 35/2 for {Name}, who is in the world, refused", session.Id, character.Name);
+            if (MayLog(session))
+                logger.LogWarning("[{Session}] 35/2 for {Name}, who is in the world, refused", session.Id, character.Name);
             result = 4;
         }
         else if (!string.IsNullOrEmpty(character.Cipher) && character.Cipher != req.Cipher)

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace NorthIsland.Server.Net;
 
 /// <summary>
@@ -46,5 +48,21 @@ public sealed class LogBudget(
             _dropped = 0;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Takes one line from the budget of a session's log lines, first logging how many lines the budget held back; for handlers whose refusals a
+    /// client can repeat at will.
+    /// </summary>
+    /// <param name="logger">The logger the line goes to.</param>
+    /// <param name="sessionId">The session id, for the line about the held-back lines.</param>
+    /// <returns>True when the line may be logged.</returns>
+    public bool TryTake(ILogger logger, int sessionId)
+    {
+        if (!TryTake(out var dropped))
+            return false;
+        if (dropped > 0)
+            logger.LogWarning("[{Session}] {Count} log line(s) of this session not logged", sessionId, dropped);
+        return true;
     }
 }
