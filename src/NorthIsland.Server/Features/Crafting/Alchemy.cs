@@ -59,10 +59,11 @@ public static class Alchemy
     public const ushort NotMadeFlag = 8;
 
     /// <summary>
-    /// Item ids that carry <see cref="NotMadeFlag"/> but are recorded coming out of compounds often enough to keep: 61071 White Crystal and
-    /// 32102 Carrot.
+    /// Item ids that carry <see cref="NotMadeFlag"/> but still come out of compounds: 61071 White Crystal and 32102 Carrot, which are recorded
+    /// coming out of compounds often enough to keep, and 42074 Bluestone, which WLOHub lists as made by compounds (two Granite most often give
+    /// it) besides being mined in two caves.
     /// </summary>
-    public static readonly IReadOnlySet<ushort> MadeDespiteFlag = new HashSet<ushort> { 61071, 32102 };
+    public static readonly IReadOnlySet<ushort> MadeDespiteFlag = new HashSet<ushort> { 61071, 32102, 42074 };
 
     /// <summary>Tells whether an item can come out of a compound.</summary>
     /// <param name="item">The item record to test.</param>
