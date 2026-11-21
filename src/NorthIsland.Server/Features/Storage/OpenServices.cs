@@ -36,7 +36,10 @@ public enum ServiceWindow
     /// <summary>The pet storage of the inn or of a Wit Maid (<c>31/x</c>).</summary>
     PetStorage,
 
-    /// <summary>The Item Bag, opened by the warehouse service or by using a Space Contract (<c>68/x</c>).</summary>
+    /// <summary>
+    /// The Item Bag, opened by the warehouse service or by using a Space Contract (<c>68/x</c>) and sorted by <c>23/250</c>. A Space Contract opens
+    /// it anywhere and the client keeps it open across map changes, so unlike the other windows it is not bound to a map.
+    /// </summary>
     ItemBag,
 }
 
@@ -57,14 +60,15 @@ public sealed class OpenServicesSessionState
 /// <summary>
 /// Keeps the service windows the server opened for each session, so a request of a window is served only while that window is open. A window
 /// stays open after the NPC event that opened it ends (a click on the world while it is shown ends the event) and closes when the player
-/// leaves the map; it is not served in a battle, nor for another character of the session.
+/// leaves the map, except the Item Bag, which is not bound to a map (<see cref="ServiceWindow.ItemBag"/>); no window is served in a battle, nor
+/// for another character of the session.
 /// </summary>
 /// <param name="world">The world state, whose map changes close the windows.</param>
 public sealed class OpenServices(
     WorldState world)
 {
-    /// <summary>Closes every service window of a player who leaves their map.</summary>
-    internal void Start() => world.MapLeaving += CloseAll;
+    /// <summary>Closes the map-bound service windows of a player who leaves their map.</summary>
+    internal void Start() => world.MapLeaving += CloseMapBound;
 
     /// <summary>Records a service window opened for the player's active character on their current map.</summary>
     /// <param name="session">The player's session.</param>
@@ -82,14 +86,17 @@ public sealed class OpenServices(
         IEnumerable<PointStoreRow>? rows = null) =>
         StateOf(session).Windows[window] = new OpenService(character, mapId ?? character.MapId, interact, rows is null ? [] : [.. rows]);
 
-    /// <summary>Finds an open service window the player may use now: opened for this character on their current map, out of battle.</summary>
+    /// <summary>
+    /// Finds an open service window the player may use now: opened for this character, out of battle, and on their current map unless the window
+    /// is not bound to a map (<see cref="IsMapBound"/>).
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's active character.</param>
     /// <param name="window">The kind of window.</param>
     /// <returns>The open window, or null when the request must be refused.</returns>
     public static OpenService? Of(GameSession session, Character character, ServiceWindow window) =>
         session.Battle is null && StateOf(session).Windows.TryGetValue(window, out var open) && ReferenceEquals(open.Character, character)
-            && open.MapId == character.MapId
+            && (!IsMapBound(window) || open.MapId == character.MapId)
             ? open
             : null;
 
@@ -117,9 +124,22 @@ public sealed class OpenServices(
             windows.TryRemove(new KeyValuePair<ServiceWindow, OpenService>(ServiceWindow.Store, open));
     }
 
-    /// <summary>Closes every service window of the session.</summary>
+    /// <summary>Closes every map-bound service window of the session (<see cref="IsMapBound"/>).</summary>
     /// <param name="session">The player's session.</param>
-    public static void CloseAll(GameSession session) => StateOf(session).Windows.Clear();
+    private static void CloseMapBound(GameSession session)
+    {
+        var windows = StateOf(session).Windows;
+        foreach (var (window, open) in windows)
+        {
+            if (IsMapBound(window))
+                windows.TryRemove(new KeyValuePair<ServiceWindow, OpenService>(window, open));
+        }
+    }
+
+    /// <summary>Whether a kind of window closes when the player leaves its map: every kind but the Item Bag.</summary>
+    /// <param name="window">The kind of window.</param>
+    /// <returns>True when the window belongs to the map it was opened on.</returns>
+    private static bool IsMapBound(ServiceWindow window) => window != ServiceWindow.ItemBag;
 
     /// <summary>The open windows of a session, created on first use.</summary>
     /// <param name="session">The player's session.</param>

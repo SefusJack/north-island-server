@@ -38,8 +38,8 @@ public sealed class MiniGridHandlers(
     };
 
     /// <summary>
-    /// Opens the Item Bag: records it as open on the player's map (<see cref="OpenServices"/>), sends whether its cells are unlocked, the stored
-    /// stacks, and the open command.
+    /// Opens the Item Bag: records it as open for the character on any map (<see cref="OpenServices"/>), sends whether its cells are unlocked,
+    /// the stored stacks, and the open command.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The player's character.</param>
@@ -56,8 +56,8 @@ public sealed class MiniGridHandlers(
     }
 
     /// <summary>
-    /// Carries out an Item Bag order and echoes it to the client when it was done, or logs it as refused. Needs the Item Bag open on the player's
-    /// map, out of battle (<see cref="OpenServices"/>).
+    /// Carries out an Item Bag order and echoes it to the client when it was done, or logs it as refused. Needs the Item Bag open for the
+    /// character, on any map, out of battle (<see cref="OpenServices"/>).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: u8 source, u8 destination, u8 count.</param>
@@ -69,14 +69,16 @@ public sealed class MiniGridHandlers(
             return ValueTask.CompletedTask;
         if (!OpenServices.IsOpen(session, c, ServiceWindow.ItemBag))
         {
-            logger.LogWarning(
-                "[{Session}] {Name}: Item Bag order {Kind} refused, no Item Bag open (map {Map}, window map {WindowMap}, in battle {Battle})",
-                session.Id,
-                c.Name,
-                kind,
-                c.MapId,
-                OpenServices.MapOf(session, ServiceWindow.ItemBag),
-                session.Battle is not null);
+            if (session.ProblemLog.TryTake(logger, session.Id)) // a client can repeat a refused order at will
+            {
+                logger.LogWarning(
+                    "[{Session}] {Name}: Item Bag order {Kind} refused, no Item Bag open (opened on map {WindowMap}, in battle {Battle})",
+                    session.Id,
+                    c.Name,
+                    kind,
+                    OpenServices.MapOf(session, ServiceWindow.ItemBag),
+                    session.Battle is not null);
+            }
             return ValueTask.CompletedTask;
         }
         var (src, dst, count) = (body.Span[0], body.Span[1], body.Span[2]);
@@ -90,7 +92,7 @@ public sealed class MiniGridHandlers(
         };
         if (done)
             session.Send(new PacketWriter(Action68.Code, kind).U8(src).U8(dst).U8(count).ToArray());
-        else
+        else if (session.ProblemLog.TryTake(logger, session.Id))
             logger.LogInformation("[{Session}] {Name}: Item Bag order {Kind} {From}->{To} x{Count} refused", session.Id, c.Name, kind, src, dst, count);
         return ValueTask.CompletedTask;
     }

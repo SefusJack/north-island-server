@@ -51,7 +51,7 @@ public static class SortHandlers
     /// <param name="bagFirst">The item ids the bag sort puts first.</param>
     /// <returns>
     /// The result code: sorted, already in order, busy (battle, stall or trade open) or not at the place of the grid (the storeroom away from the
-    /// player's house, the bank without its item window open).
+    /// player's house, the bank without its item window open, the Item Bag while it is not open).
     /// </returns>
     private static byte Sort(
         GameSession session,
@@ -81,8 +81,10 @@ public static class SortHandlers
                     return InOrder;
                 BankHandlers.SendItems(session, c);
                 return Sorted;
-            case ItemBag: // item bag: sort and send its list
+            case ItemBag: // item bag: only while the Item Bag is open (on any map), then sort and send its list
             {
+                if (!OpenServices.IsOpen(session, c, ServiceWindow.ItemBag))
+                    return NotHere;
                 if (!GridSort.Sort(c.MiniGrid, items, MiniGridHandlers.Cells, MiniGridHandlers.Rows, World.Bag.MaxStack))
                     return InOrder;
                 var w = new PacketWriter(Action68.Code, Action68.List);
