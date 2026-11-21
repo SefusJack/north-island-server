@@ -8,10 +8,22 @@ using NorthIsland.Protocol.Messages.World;
 namespace NorthIsland.Server.World;
 
 /// <summary>The online world: who is online and where, and the packets passed between players on the same map or in the same team.</summary>
+/// <param name="travel">The teleport rule, for the maps a leader may not take the team onto and the states that keep a member back.</param>
+/// <param name="maps">The map data, to tell the instance copies.</param>
+/// <param name="instances">The live instances, for the members a leader may take onto an instance copy.</param>
 /// <param name="logger">The logger.</param>
 public sealed class WorldState(
+    TravelRules travel,
+    MapData maps,
+    InstanceRegistry instances,
     ILogger<WorldState> logger)
 {
+    /// <summary>
+    /// The instance init result (85/2) code 9 that tells a member left behind by an instance entry to go in through the instance window
+    /// (the client shows "Players are too busy to transmit instance").
+    /// </summary>
+    public const byte TooBusyForInstance = 9; // 85/2 code 9: players too busy to transmit to the instance
+
     /// <summary>The online sessions by player id.</summary>
     private readonly ConcurrentDictionary<int, GameSession> _online = new();
 
@@ -234,8 +246,8 @@ public sealed class WorldState(
     }
 
     /// <summary>
-    /// Moves a player to a warp's map and spot: closes trades, stalls and fishing, stores the position, tells everyone and
-    /// takes along team members not in battle.
+    /// Moves a player to a warp's map and spot: closes trades, stalls and fishing, stores the position, tells everyone and takes along the
+    /// team members that may follow (see <see cref="PullRefusal"/>).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="warp">The destination.</param>
@@ -243,6 +255,10 @@ public sealed class WorldState(
     {
         var character = session.ActiveCharacter!;
         var id = PlayerId(session);
+        var (fromMap, fromRoom) = (character.MapId, session.HouseRoom);
+        // a door of the leader's own event run on the map they leave, or a walk into a tent or between its rooms, may take the team onto
+        // a map no teleport reaches; any other warp (GM, activity, training, send-outs) takes the team only where a teleport could go
+        var walksIn = (session.Event is { Warping: true } run && run.MapId == fromMap) || TentHandlers.IsHouseMap(warp.MapId);
         MapLeaving?.Invoke(session);
         MapChanging?.Invoke(session, warp);
         StopAutoCollect(session);
@@ -267,9 +283,57 @@ public sealed class WorldState(
 
         foreach (var member in Teams.MembersOf(id))
         {
-            if (_online.TryGetValue(member, out var m) && m.ActiveCharacter is not null && m.Battle is null)
-                ChangeMap(m, warp);
+            if (!_online.TryGetValue(member, out var m) || m.ActiveCharacter is not { } mc)
+                continue;
+            if (PullRefusal(m, mc, fromMap, fromRoom, warp, walksIn) is { } why)
+            {
+                logger.LogInformation("[{Session}] {Name} stays behind as {Leader} warps to map {To}: {Why}", m.Id, mc.Name, character.Name,
+                    warp.MapId, why);
+                continue;
+            }
+            ChangeMap(m, warp);
         }
+    }
+
+    /// <summary>
+    /// Gives why a team member may not be taken along by their leader's map change: they stand on another map or house room than the one
+    /// the leader leaves (members follow their leader within the scene), something keeps them busy (<see cref="TravelRules.BusyRefusal"/>),
+    /// the destination is an instance copy they are no member of, or it is a map no teleport reaches and the warp is no walk-in. A busy
+    /// member of the instance is told to go in through the instance window.
+    /// </summary>
+    /// <param name="member">The member's session.</param>
+    /// <param name="character">The member's active character.</param>
+    /// <param name="fromMap">The map id the leader leaves.</param>
+    /// <param name="fromRoom">The house room the leader leaves, 0 outside a house.</param>
+    /// <param name="warp">The leader's destination.</param>
+    /// <param name="walksIn">True when the warp is a door of the leader's own event run or a walk into a tent or between its rooms.</param>
+    /// <returns>The reason, or null when the member follows.</returns>
+    private string? PullRefusal(
+        GameSession member,
+        Character character,
+        ushort fromMap,
+        byte fromRoom,
+        DoorWarp warp,
+        bool walksIn)
+    {
+        if (character.MapId != fromMap || member.HouseRoom != fromRoom)
+            return $"on map {character.MapId} room {member.HouseRoom}, not with the leader";
+        var instanceCopy = maps.InstanceOfMap(warp.MapId) is not null;
+        var instanceMember = false;
+        if (instanceCopy && instances.ByMap(warp.MapId) is { } instance)
+        {
+            lock (instance.Lock)
+                instanceMember = instance.Member(PlayerId(member)) is not null;
+        }
+        if (TravelRules.BusyRefusal(member) is { } busy)
+        {
+            if (instanceMember)
+                member.Send(InstanceMessages.InitResult(TooBusyForInstance));
+            return busy;
+        }
+        if (instanceCopy)
+            return instanceMember ? null : $"no member of the instance on map {warp.MapId}";
+        return travel.IsBarred(warp.MapId) && !walksIn ? $"map {warp.MapId} cannot be reached this way" : null;
     }
 
     /// <summary>
