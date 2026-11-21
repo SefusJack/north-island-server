@@ -91,6 +91,20 @@ public sealed class ServerOptions
     /// <summary>The most packets queued for one client; a client that lets more pile up (it stopped reading) is disconnected.</summary>
     public int OutboxPackets { get; set; } = 8192;
 
+    /// <summary>
+    /// The failed logins of one account name, or from one address, that lock out further logins for <see cref="LoginLockoutSeconds"/>.
+    /// </summary>
+    public int LoginFailuresBeforeLockout { get; set; } = 10;
+
+    /// <summary>The seconds in which <see cref="LoginFailuresBeforeLockout"/> failures lock out logins, and the seconds the lockout lasts.</summary>
+    public int LoginLockoutSeconds { get; set; } = 300;
+
+    /// <summary>The failed logins after which a connection is closed.</summary>
+    public int LoginFailuresPerConnection { get; set; } = 5;
+
+    /// <summary>The accounts one address may auto-register per hour; loopback addresses are not limited. 0 or less for no limit.</summary>
+    public int RegistrationsPerAddressPerHour { get; set; } = 5;
+
     /// <summary>The size in megabytes at which a log file is closed and the day's next part begun.</summary>
     public int LogFileMegabytes { get; set; } = FileLoggerProvider.DefaultFileMegabytes;
 

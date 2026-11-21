@@ -20,6 +20,7 @@ namespace NorthIsland.Server.Features.Login;
 /// <param name="formulas">Sets the initial values of a new character.</param>
 /// <param name="worldEntry">Sends the world-entry packets once a character is chosen.</param>
 /// <param name="bans">The account and address ban list checked at login.</param>
+/// <param name="throttle">Locks out logins after too many failures and limits the auto-registrations per address.</param>
 /// <param name="options">
 /// Server options: server id, accepted client versions, spawn point, auto-registration and what follows character creation.
 /// </param>
@@ -32,6 +33,7 @@ public sealed partial class LoginHandlers(
     FormulaData formulas,
     WorldEntry worldEntry,
     BanList bans,
+    LoginThrottle throttle,
     IOptions<ServerOptions> options,
     ILogger<LoginHandlers> logger)
 {
@@ -155,10 +157,11 @@ public sealed partial class LoginHandlers(
     }
 
     /// <summary>
-    /// Runs a login: checks the client version, the Item.Dat size, the name format and the bans, verifies the password (creating the account when
-    /// auto-registration is on), claims the account for the session and kicks its earlier session (in the world or at character select), clears
-    /// the admin mode, makes a GmAccounts name a GM only when the account existed before this login, then sends the login id and the character
-    /// list.
+    /// Runs a login: checks the client version, the Item.Dat size, the name format, the bans and the lockouts, verifies the password (creating
+    /// the account when auto-registration is on, the name is not a GmAccounts name and the address has registrations left), claims the account for
+    /// the session and kicks its earlier session (in the world or at character select), clears the admin mode, makes a GmAccounts name a GM, then
+    /// sends the login id and the character list. A wrong password or an unknown name counts towards the lockouts, and a connection whose logins
+    /// fail too often is closed.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="name">The account name.</param>
@@ -179,7 +182,7 @@ public sealed partial class LoginHandlers(
         }
 
         logger.LogInformation("[{Session}] login '{Name}' version {Version} Item.Dat size {ItemDat}",
-            session.Id, name, version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
+            session.Id, LogText.Printable(name), version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
 
         if (!_options.AcceptsClientVersion(version))
         {
@@ -194,13 +197,21 @@ public sealed partial class LoginHandlers(
         }
         if (!AccountNamePattern().IsMatch(name) || password.Length == 0)
         {
-            session.Send(ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
+            Refuse(session, ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
             return;
         }
-        if (bans.IsAccountBanned(name) || bans.IsAddressBanned(session.RemoteEndPoint?.Address))
+        var address = session.RemoteEndPoint?.Address;
+        if (bans.IsAccountBanned(name) || bans.IsAddressBanned(address))
         {
-            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: banned", session.Id, name, session.RemoteEndPoint?.Address);
+            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: banned", session.Id, name, address);
             session.Send(ServerMessages.Locked(account: true, GmCommands.BanSeconds));
+            return;
+        }
+        if (throttle.LockedSeconds(name, address) is var locked and > 0)
+        {
+            logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: locked out for {Seconds} s after failed logins",
+                session.Id, name, address, locked);
+            Refuse(session, ServerMessages.Locked(account: true, locked));
             return;
         }
 
@@ -208,9 +219,18 @@ public sealed partial class LoginHandlers(
         var created = false;
         if (account is null)
         {
-            if (!_options.AutoRegister)
+            if (!_options.AutoRegister || _options.ListsGm(name))
             {
-                session.Send(ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
+                if (_options.AutoRegister)
+                    logger.LogWarning("[{Session}] login '{Name}' refused: a GmAccounts name is never registered by a login", session.Id, name);
+                Failed(session, name, address);
+                return;
+            }
+            if (!throttle.TryRegister(address))
+            {
+                logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: the address registered its accounts for this hour",
+                    session.Id, name, address);
+                Refuse(session, ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
                 return;
             }
             try
@@ -225,10 +245,12 @@ public sealed partial class LoginHandlers(
         }
         if (account is null || (!created && !PasswordHasher.Verify(password, account.PasswordHash)))
         {
-            session.Send(ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
+            Failed(session, name, address);
             return;
         }
 
+        throttle.Succeeded(name);
+        session.Login.FailedLogins = 0;
         session.Account = account;
         session.AdminMode = false;
         KickEarlierSessions(session, account);
@@ -236,19 +258,40 @@ public sealed partial class LoginHandlers(
         account.LastLoginUtc = GameClock.UtcNow;
         if (!account.Gm && _options.ListsGm(account.Name))
         {
-            if (created)
-                logger.LogWarning(
-                    "[{Session}] {Name} is listed in GmAccounts but was registered by this login; not made a GM", session.Id, account.Name);
-            else
-            {
-                account.Gm = true;
-                logger.LogInformation("[{Session}] {Name} is made a GM by the GmAccounts setting", session.Id, account.Name);
-            }
+            account.Gm = true;
+            logger.LogInformation("[{Session}] {Name} is made a GM by the GmAccounts setting", session.Id, account.Name);
         }
         await store.SaveAsync(account).ConfigureAwait(false);
 
         session.Send(ServerMessages.LoginId(account.LoginId));
         SendCharacterList(session);
+    }
+
+    /// <summary>Counts a wrong password or an unknown account name towards the lockouts and refuses the login.</summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="name">The account name.</param>
+    /// <param name="address">The client address, or null when it is not known.</param>
+    private void Failed(GameSession session, string name, System.Net.IPAddress? address)
+    {
+        throttle.Failed(name, address);
+        logger.LogWarning("[{Session}] login '{Name}' from {Address} refused: wrong account or password", session.Id, name, address);
+        Refuse(session, ServerMessages.LoginRejected(Action1.WrongAccountOrPassword));
+    }
+
+    /// <summary>
+    /// Sends the refusal of a login and counts it for the connection; once the connection reaches the failures per connection, it is told that
+    /// the login failed too often and closed.
+    /// </summary>
+    /// <param name="session">The player's session.</param>
+    /// <param name="refusal">The refusal packet.</param>
+    private void Refuse(GameSession session, byte[] refusal)
+    {
+        session.Send(refusal);
+        if (++session.Login.FailedLogins < Math.Max(1, _options.LoginFailuresPerConnection))
+            return;
+        logger.LogWarning("[{Session}] {Count} failed logins on this connection; disconnected", session.Id, session.Login.FailedLogins);
+        session.Send(ServerMessages.Kick(KickReason.LoginFailedThreeTimes));
+        session.Close();
     }
 
     /// <summary>
@@ -331,15 +374,21 @@ public sealed partial class LoginHandlers(
     }
 
     /// <summary>
-    /// Forgets the account (which also ends the session's claim on it) and the admin mode, and returns the session to the stage that waits for a
-    /// login; ignored once the session is in the world, which it leaves only by disconnecting.
+    /// Releases the session's claim on its account, forgets the account and the admin mode, and returns the session to the stage that waits for a
+    /// login, with a new login timeout; ignored once the session is in the world, which it leaves only by disconnecting.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
-    internal static ValueTask OnBackToLogin(GameSession session, ReadOnlyMemory<byte> body)
+    internal ValueTask OnBackToLogin(GameSession session, ReadOnlyMemory<byte> body)
     {
         if (session.State is not (SessionState.AwaitLogin or SessionState.CharacterSelect or SessionState.Creating))
+        {
+            logger.LogWarning("[{Session}] 63/0 in state {State}, ignored", session.Id, session.State);
             return ValueTask.CompletedTask;
+        }
+        if (session.State != SessionState.AwaitLogin)
+            session.RestartLoginTimer();
+        sessions.Release(session);
         session.Account = null;
         session.AdminMode = false;
         session.Login.PendingName = null;
@@ -350,10 +399,13 @@ public sealed partial class LoginHandlers(
     /// <summary>Drops the pending character name and returns the session to character select; ignored outside character creation.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
-    internal static ValueTask OnCancelCreation(GameSession session, ReadOnlyMemory<byte> body)
+    internal ValueTask OnCancelCreation(GameSession session, ReadOnlyMemory<byte> body)
     {
         if (session.State != SessionState.Creating)
+        {
+            logger.LogWarning("[{Session}] 63/3 in state {State}, ignored", session.Id, session.State);
             return ValueTask.CompletedTask;
+        }
         session.Login.PendingName = null;
         session.State = SessionState.CharacterSelect;
         return ValueTask.CompletedTask;
