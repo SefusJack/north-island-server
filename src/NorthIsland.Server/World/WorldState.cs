@@ -297,7 +297,7 @@ public sealed class WorldState(
 
     /// <summary>
     /// Gives why a team member may not be taken along by their leader's map change: they stand on another map or house room than the one
-    /// the leader leaves (members follow their leader within the scene), something keeps them busy (<see cref="TravelRules.BusyRefusal"/>),
+    /// the leader leaves (members follow their leader within the scene), something keeps them busy (<see cref="FollowRefusal"/>),
     /// the destination is an instance copy they are no member of, or it is a map no teleport reaches and the warp is no walk-in. A busy
     /// member of the instance is told to go in through the instance window.
     /// </summary>
@@ -325,7 +325,7 @@ public sealed class WorldState(
             lock (instance.Lock)
                 instanceMember = instance.Member(PlayerId(member)) is not null;
         }
-        if (TravelRules.BusyRefusal(member) is { } busy)
+        if (FollowRefusal(member) is { } busy)
         {
             if (instanceMember)
                 member.Send(InstanceMessages.InitResult(TooBusyForInstance));
@@ -335,6 +335,22 @@ public sealed class WorldState(
             return instanceMember ? null : $"no member of the instance on map {warp.MapId}";
         return travel.IsBarred(warp.MapId) && !walksIn ? $"map {warp.MapId} cannot be reached this way" : null;
     }
+
+    /// <summary>
+    /// Gives why a team member's state keeps them from following their leader: <see cref="TravelRules.BusyRefusal"/> without its event clause.
+    /// A member often runs the same NPC event as the leader (the client mirrors the leader's NPC talk to the party), and the event engine ends
+    /// a member's run when they are moved off its map, so a running event does not keep them back.
+    /// </summary>
+    /// <param name="member">The member's session.</param>
+    /// <returns>The reason, or null when nothing holds the member.</returns>
+    private static string? FollowRefusal(GameSession member) =>
+        member.Battle is not null ? "in a battle"
+            : member.Watching is not null ? "watching a battle"
+                : member.Minigame is not null ? "in a game"
+                    : member.Stalls.Any ? "at a stall"
+                        : member.Trades.Items is not null || member.Trades.Pets is not null ? "trading"
+                            : member.Activities.Fishing is not null ? "fishing"
+                                : null;
 
     /// <summary>
     /// Runs when the client has loaded the map: sends the scene ready packet and the players, pets, rides, auto collectors
