@@ -8,22 +8,21 @@ namespace NorthIsland.Server.Features.PetCare;
 /// <summary>Handles the pet storage of the inn: showing it and moving pets between the team and the storage.</summary>
 /// <param name="world">The world state, passed on when a pet leaves the player.</param>
 /// <param name="space">The space contract, which tells how many places the storage has.</param>
-/// <param name="tents">The house handlers, for the maid of the house the player stands in.</param>
 /// <param name="logger">The logger.</param>
 public sealed class PetStorageHandlers(
     WorldState world,
     SpaceContract space,
-    TentHandlers tents,
     ILogger<PetStorageHandlers> logger)
 {
     /// <summary>
-    /// Opens the storage for a player from an NPC's event: remembers the map it was opened on, sends its state and list, then the open message.
+    /// Opens the storage for a player from an NPC's event: records it as open on the player's map (<see cref="OpenServices"/>), sends its state
+    /// and list, then the open message.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's character.</param>
     public void Open(GameSession session, Character character)
     {
-        session.PetJobs.StorageMap = character.MapId;
+        OpenServices.Open(session, character, ServiceWindow.PetStorage);
         SendState(session, character);
         session.Send(InnMessages.StorageOpen());
         logger.LogInformation("[{Session}] pet storage ({Count} stored)", session.Id, character.StoredPets.Count);
@@ -67,21 +66,9 @@ public sealed class PetStorageHandlers(
     }
 
     /// <summary>
-    /// Tells whether the player can reach the pet storage where they stand: an NPC opened it on this map (the window stays open after a
-    /// click on the map ends the NPC's event), or the player is in a house with a Wit Maid, whose menu opens the storage.
-    /// </summary>
-    /// <param name="session">The player's session.</param>
-    /// <param name="character">The player's character.</param>
-    /// <returns>True when the storage is open to the player.</returns>
-    private bool Reachable(GameSession session, Character character) =>
-        session.PetJobs.StorageMap == character.MapId
-        || TentHandlers.IsHouseMap(character.MapId) && tents.OwnerOfHouse(character.MapId) is { } owner
-            && owner.Character.Furniture.Exists(f => !f.Retained && MaidHandlers.MaidFurniture.Contains(f.ItemId));
-
-    /// <summary>
-    /// Moves pets between the team and the storage in one step; the whole move is refused when the storage is out of reach or a pet trade
-    /// is open, or when any part breaks a rule (an empty place, a ridden or stalled pet, a pet that cannot be stored, no room, or two pets of
-    /// one kind on a side).
+    /// Moves pets between the team and the storage in one step; the whole move is refused when the storage is not open on the player's map (an
+    /// NPC or a Wit Maid opened it there, <see cref="OpenServices"/>) or a pet trade is open, or when any part breaks a rule (an empty place, a
+    /// ridden or stalled pet, a pet that cannot be stored, no room, or two pets of one kind on a side).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="storeSlots">The team slots of the pets to store.</param>
@@ -94,7 +81,7 @@ public sealed class PetStorageHandlers(
         var toStore = storeSlots.Distinct().Select(s => character.Pets.Find(p => p.Slot == s)).ToList();
         var toTake = withdrawIdx.Distinct().Select(i => character.StoredPets.Find(p => p.Slot == i)).ToList();
 
-        string? refusal = !Reachable(session, character) ? "no pet storage here"
+        string? refusal = !OpenServices.IsOpen(session, character, ServiceWindow.PetStorage) ? "no pet storage open here"
             : session.Trades.Pets is not null ? "a pet trade is open"
                 : toStore.Exists(p => p is null) || toTake.Exists(p => p is null) ? "an empty place"
                     : toStore.Exists(p => p!.Slot == session.RidingPetSlot) ? "rides that pet"

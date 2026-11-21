@@ -16,7 +16,8 @@ public sealed class ShopHandlers(
 {
     /// <summary>
     /// Handles a sell request (<c>27/2</c>): removes the listed bag stacks and pays their sell price, or answers with a failure. Needs the sell
-    /// window of an NPC open (<see cref="NpcService.AtNpc"/>), and room in the purse for the whole price.
+    /// window of the sale kind open (<see cref="OpenServices"/>), stacks of that kind not committed elsewhere (<see cref="BagLocks"/>), and room
+    /// in the purse for the whole price.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the sale kind and the bag slots to sell.</param>
@@ -25,27 +26,35 @@ public sealed class ShopHandlers(
         var character = session.ActiveCharacter;
         if (session.State != SessionState.InWorld || character is null)
             return ValueTask.CompletedTask;
-        if (!NpcService.AtNpc(session, character))
+        var request = SellRequest.Parse(body.Span);
+        var window = request.SaleKind == 0 ? ServiceWindow.SellEquipment : ServiceWindow.SellGoods; // sale kind 0: equipment, else goods
+        if (!OpenServices.IsOpen(session, character, window))
         {
             logger.LogWarning(
-                "[{Session}] sell without an open sell window (map {Map}, event map {EventMap}, in battle {Battle})",
+                "[{Session}] sell without an open {Window} window (map {Map}, window map {WindowMap}, in battle {Battle})",
                 session.Id,
+                window,
                 character.MapId,
-                session.Event?.MapId,
+                OpenServices.MapOf(session, window),
                 session.Battle is not null);
             session.Send(ShopMessages.SellResult(SellResult.Failed));
             return ValueTask.CompletedTask;
         }
 
-        var request = SellRequest.Parse(body.Span);
         var stacks = new List<BagItem>();
         foreach (var slot in request.Slots.Distinct())
         {
             var stack = character.Bag.Find(b => b.Slot == slot);
             var record = stack is null ? null : items[stack.ItemId];
-            if (stack is null || record is null || record.IsEquipment != (request.SaleKind == 0) || session.Vehicle?.BagSlot == slot)
+            var locked = BagLocks.LockedBy(session, slot);
+            if (stack is null || record is null || record.IsEquipment != (request.SaleKind == 0) || locked is not null)
             {
-                logger.LogWarning("[{Session}] sell: bag slot {Slot} cannot be sold here (kind {Kind})", session.Id, slot, request.SaleKind);
+                logger.LogWarning(
+                    "[{Session}] sell: bag slot {Slot} cannot be sold here (kind {Kind}, {Locked})",
+                    session.Id,
+                    slot,
+                    request.SaleKind,
+                    locked ?? "empty or of the other kind");
                 session.Send(ShopMessages.SellResult(SellResult.NotInInventory));
                 return ValueTask.CompletedTask;
             }
@@ -165,17 +174,22 @@ public sealed class ShopHandlers(
     }
 
     /// <summary>
-    /// Finds the store the player has open: the store dialog the running NPC event shows, looked up on the event's map, which must be the
-    /// player's current map, out of battle.
+    /// Finds the store the player has open: the store dialog an NPC event last showed (<see cref="OpenServices"/>), looked up by its interact
+    /// index on the map it was shown on, which must be the player's current map, out of battle.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's character.</param>
     /// <returns>The store interaction, or null when none is open.</returns>
     private EveInteract? OpenStore(GameSession session, Character character)
     {
-        if (!NpcService.AtNpc(session, character) || session.Event!.OpenInteract is not { } index)
+        if (OpenServices.Of(session, character, ServiceWindow.Store) is not { } open)
             return null;
-        var interact = maps.Scene(session.Event.MapId)?.Interacts.FirstOrDefault(i => i.Index == index);
-        return interact is { Kind: 2 or 3 } ? interact : null;
+        var interact = maps.Scene(open.MapId)?.Interacts.FirstOrDefault(i => i.Index == open.Interact);
+        return IsStore(interact) ? interact : null;
     }
+
+    /// <summary>Whether an interaction of a map is a store dialog: an equipment store (kind 2) or a goods store (kind 3).</summary>
+    /// <param name="interact">The interaction, or null.</param>
+    /// <returns>True for a store.</returns>
+    public static bool IsStore(EveInteract? interact) => interact is { Kind: 2 or 3 }; // 2 equipment store, 3 goods store
 }

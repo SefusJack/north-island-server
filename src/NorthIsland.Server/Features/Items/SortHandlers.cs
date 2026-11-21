@@ -49,7 +49,10 @@ public static class SortHandlers
     /// <param name="grid">The grid number.</param>
     /// <param name="items">Item definitions.</param>
     /// <param name="bagFirst">The item ids the bag sort puts first.</param>
-    /// <returns>The result code: sorted, already in order, busy (battle, stall or trade open) or not at the place of the grid.</returns>
+    /// <returns>
+    /// The result code: sorted, already in order, busy (battle, stall or trade open) or not at the place of the grid (the storeroom away from the
+    /// player's house, the bank without its item window open).
+    /// </returns>
     private static byte Sort(
         GameSession session,
         Character c,
@@ -71,7 +74,9 @@ public static class SortHandlers
                     session.Send(ItemMessages.BagList(c.Bag.OrderBy(b => b.Slot).Select(Entry)));
                 return sorted ? Sorted : InOrder;
             }
-            case Bank: // bank: sort and send its items
+            case Bank: // bank: only while the bank's item window is open on the player's map, then sort and send its items
+                if (!OpenServices.IsOpen(session, c, ServiceWindow.BankItems))
+                    return NotHere;
                 if (!GridSort.Sort(c.Bank, items, BagItem.LastSlot, World.Bag.Rows, World.Bag.MaxStack))
                     return InOrder;
                 BankHandlers.SendItems(session, c);

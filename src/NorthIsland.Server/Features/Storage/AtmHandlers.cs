@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NorthIsland.Protocol.IO;
@@ -19,12 +18,6 @@ public sealed class AtmHandlers(
     IOptions<MallOptions> options,
     ILogger<AtmHandlers> logger)
 {
-    /// <summary>
-    /// The map each session last had the point exchange form opened on. The NPC event that opens the form goes on without waiting for it, so the
-    /// form is not held open by a running event.
-    /// </summary>
-    private readonly ConditionalWeakTable<GameSession, StrongBox<int>> exchangeMaps = new();
-
     /// <summary>Sends the ATM balance to a player who enters the world, when it is not zero.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The character that entered.</param>
@@ -34,12 +27,15 @@ public sealed class AtmHandlers(
             session.Send(AtmMessages.Balance(character.AtmGold));
     }
 
-    /// <summary>Opens the ATM window: sends the balance, then the form to show.</summary>
+    /// <summary>
+    /// Opens the ATM window: records the form as open on the player's map (<see cref="OpenServices"/>), sends the balance, then the form.
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="form">1 for the deposit form, anything else for the transfer form.</param>
     public void OpenForm(GameSession session, byte form)
     {
         var character = session.ActiveCharacter!;
+        OpenServices.Open(session, character, form == 1 ? ServiceWindow.AtmDeposit : ServiceWindow.AtmTransfer); // form 1: deposit
         session.Send(AtmMessages.Balance(character.AtmGold));
         session.Send(AtmMessages.Form(form));
         logger.LogInformation(
@@ -51,14 +47,14 @@ public sealed class AtmHandlers(
     }
 
     /// <summary>
-    /// Opens the point exchange form: sends the account's mall points and the gold paid for one point, and records the map it was opened on for
-    /// <see cref="OnPointExchange"/>.
+    /// Opens the point exchange form: records it as open on the player's map (<see cref="OpenServices"/>), then sends the account's mall points
+    /// and the gold paid for one point.
     /// </summary>
     /// <param name="session">The player's session.</param>
     public void OpenExchange(GameSession session)
     {
         if (session.ActiveCharacter is { } character)
-            exchangeMaps.AddOrUpdate(session, new StrongBox<int>(character.MapId));
+            OpenServices.Open(session, character, ServiceWindow.PointExchange);
         session.Send(MallMessages.Points(session.Account!.MallPoints));
         session.Send(AtmMessages.ExchangeRate(options.Value.PointExchangeRate));
         logger.LogInformation("[{Session}] point exchange form ({Rate} gold a point)", session.Id, options.Value.PointExchangeRate);
@@ -72,7 +68,7 @@ public sealed class AtmHandlers(
     /// <param name="body">The packet body: i32 gold amount.</param>
     internal ValueTask OnDeposit(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session, body, 4) is not { } character || !AtAtm(session, character, "deposit"))
+        if (CharacterOf(session, body, 4) is not { } character || !AtAtm(session, character, "deposit", ServiceWindow.AtmDeposit))
             return ValueTask.CompletedTask;
         var amount = new PacketReader(body.Span).I32();
         if (amount <= 0 || amount > character.Gold)
@@ -107,7 +103,7 @@ public sealed class AtmHandlers(
     /// <param name="body">The packet body: i32 gold amount.</param>
     internal ValueTask OnWithdraw(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session, body, 4) is not { } character || !AtAtm(session, character, "withdraw"))
+        if (CharacterOf(session, body, 4) is not { } character || !AtAtm(session, character, "withdraw", ServiceWindow.AtmDeposit))
             return ValueTask.CompletedTask;
         var amount = new PacketReader(body.Span).I32();
         if (amount <= 0 || amount > character.AtmGold || (long)character.Gold + amount > BankHandlers.MaxGold)
@@ -143,7 +139,7 @@ public sealed class AtmHandlers(
     /// <param name="body">The packet body: i32 login id of the receiver, i32 gold amount.</param>
     internal ValueTask OnTransfer(GameSession session, ReadOnlyMemory<byte> body)
     {
-        if (CharacterOf(session, body, 8) is not { } character || !AtAtm(session, character, "transfer"))
+        if (CharacterOf(session, body, 8) is not { } character || !AtAtm(session, character, "transfer", ServiceWindow.AtmTransfer))
             return ValueTask.CompletedTask;
         var reader = new PacketReader(body.Span);
         var targetId = reader.I32();
@@ -186,7 +182,7 @@ public sealed class AtmHandlers(
         if (CharacterOf(session, body, 4) is not { } character)
             return ValueTask.CompletedTask;
         var account = session.Account!;
-        if (!AtAtm(session, character, "point exchange", exchange: true))
+        if (!AtAtm(session, character, "point exchange", ServiceWindow.PointExchange))
         {
             session.Send(MallMessages.Points(account.MallPoints));
             return ValueTask.CompletedTask;
@@ -220,26 +216,26 @@ public sealed class AtmHandlers(
     }
 
     /// <summary>
-    /// Whether the ATM window of a request is open: an NPC event that opened an ATM form runs on the player's map (<see cref="NpcService.AtNpc"/>),
-    /// or, for the point exchange, the form was last opened on the player's map and they are not in a battle. A refusal is logged.
+    /// Whether the ATM form of a request is open: an NPC event opened it on the player's map and they are not in a battle
+    /// (<see cref="OpenServices"/>). The deposit form takes deposits and withdrawals, the transfer form transfers. A refusal is logged.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's active character.</param>
     /// <param name="request">The name of the request, for the log.</param>
-    /// <param name="exchange">True for the point exchange, whose form an event opens without waiting for it.</param>
+    /// <param name="window">The form the request belongs to.</param>
     /// <returns>True when the request may be served.</returns>
-    private bool AtAtm(GameSession session, Character character, string request, bool exchange = false)
+    private bool AtAtm(GameSession session, Character character, string request, ServiceWindow window)
     {
-        if (NpcService.AtNpc(session, character)
-            || (exchange && session.Battle is null && exchangeMaps.TryGetValue(session, out var map) && map.Value == character.MapId))
+        if (OpenServices.IsOpen(session, character, window))
             return true;
         logger.LogWarning(
-            "[{Session}] {Name}: ATM {Request} refused, no ATM open (map {Map}, event map {EventMap}, in battle {Battle})",
+            "[{Session}] {Name}: ATM {Request} refused, no {Window} open (map {Map}, window map {WindowMap}, in battle {Battle})",
             session.Id,
             character.Name,
             request,
+            window,
             character.MapId,
-            session.Event?.MapId,
+            OpenServices.MapOf(session, window),
             session.Battle is not null);
         return false;
     }

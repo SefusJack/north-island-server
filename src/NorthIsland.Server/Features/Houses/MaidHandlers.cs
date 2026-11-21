@@ -49,7 +49,8 @@ public sealed class MaidHandlers(
     }
 
     /// <summary>
-    /// Handles the maid's menu orders: the bank (<c>76/1</c>), the pet storage (<c>76/2</c>) and the change of clothes (<c>76/3</c>).
+    /// Handles the maid's menu orders: the bank (<c>76/1</c>), the pet storage (<c>76/2</c>) and the change of clothes (<c>76/3</c>). The bank
+    /// and the pet storage are recorded as open on the house map (<see cref="OpenServices"/>), which serves their requests.
     /// </summary>
     /// <param name="session">The session.</param>
     /// <param name="body">The maid's furniture index, and for the change of clothes the choice and the bag slot of the suit.</param>
@@ -66,10 +67,12 @@ public sealed class MaidHandlers(
         switch (kind)
         {
             case Action76.Bank: // 76/1: open the bank
+                OpenServices.Open(session, c, ServiceWindow.BankItems);
                 BankHandlers.SendItems(session, c);
                 session.Send(new PacketWriter(Action76.Code, Action76.Bank).ToArray());
                 break;
             case Action76.Pets: // 76/2: open the pet storage
+                OpenServices.Open(session, c, ServiceWindow.PetStorage);
                 storage.SendState(session, c);
                 session.Send(new PacketWriter(Action76.Code, Action76.Pets).ToArray());
                 break;

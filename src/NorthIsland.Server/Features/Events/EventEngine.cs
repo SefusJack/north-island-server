@@ -278,7 +278,10 @@ public sealed partial class EventEngine(
         session.Event = null;
     }
 
-    /// <summary>Records the player's answer to the dialog that is open; the next conditions of the run read it.</summary>
+    /// <summary>
+    /// Records the player's answer to the dialog that is open; the next conditions of the run read it. An answer to the open store closes it
+    /// (<see cref="OpenServices"/>).
+    /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="code">The answer code.</param>
     public void Answer(GameSession session, int code)
@@ -290,6 +293,7 @@ public sealed partial class EventEngine(
         }
         run.Answer = (interact, code);
         run.OpenInteract = null;
+        OpenServices.CloseStore(session, interact); // a store dialog answers only when it closes
         logger.LogInformation("[{Session}] {Source}: answer {Code} to dialog {Interact}", session.Id, run.Source, code, interact);
 
         if (run.MapId == EventArenas.LobbyMapId && EventArenas.ActivityOfAnswer(interact, code) is { } activity
@@ -444,6 +448,9 @@ public sealed partial class EventEngine(
                     {
                         run.OpenInteract = mapped.Wire.DataId;
                         run.Answer = null;
+                        // a store dialog stays open after the run ends (a click on the world ends it): its buys are served by the record
+                        if (ShopHandlers.IsStore(maps.Scene(run.MapId)?.Interacts.FirstOrDefault(i => i.Index == mapped.Wire.DataId)))
+                            OpenServices.Open(session, character, ServiceWindow.Store, run.MapId, mapped.Wire.DataId);
                     }
                     return;
 
@@ -542,6 +549,7 @@ public sealed partial class EventEngine(
                     break;
 
                 case ResultAction.PointStore: // open the point store with the rows collected so far, then pause
+                    OpenServices.Open(session, character, ServiceWindow.PointStore, run.MapId, rows: run.PointStoreRows);
                     mall.OpenPointStore(session, run.PointStoreRows);
                     session.Send(EventMessages.StopWaiting());
                     run.Started = true;
@@ -555,6 +563,10 @@ public sealed partial class EventEngine(
                 case ResultAction.Service: // open another service window, or skip it when not implemented
                     if (services.Open(session, mapped.Service))
                     {
+                        // the sell windows are recorded here; the bank, ATM and pet storage openers record their own windows
+                        if (mapped.Service is Services.SellEquipment or Services.SellGoods)
+                            OpenServices.Open(session, character,
+                                mapped.Service == Services.SellEquipment ? ServiceWindow.SellEquipment : ServiceWindow.SellGoods);
                         session.Send(EventMessages.StopWaiting());
                         run.Started = true;
                         logger.LogInformation("[{Session}] {Source}: opened {What}", session.Id, run.Source, mapped.Description);
