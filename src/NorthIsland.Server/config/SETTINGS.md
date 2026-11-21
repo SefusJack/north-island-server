@@ -507,7 +507,7 @@ of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common, themed | a high-HP food ×5 and a high-SP food ×5 (900 each, 9%), Pizza ×2 (800, 8%) and Wishing Coins (700, 7%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
+| Common, themed | a high-HP food ×5 and a high-SP food ×5 (1150 each, 11.5%) and Pizza ×2 (1000, 10%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
 | Common, fixed | Carnie Token ×3 (1000, 10%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); the event's common forging scroll ×3 (400, 4%) and uncommon forging scroll ×2, Small Demon ×1 (250, 2.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); the event's rare forging scroll (100, 1%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (195, 1.95%), a Silver Card (75, 0.75%) and a Golden Card (5, 0.05%) |
 | Big, themed | 4 rares (115 each, 46%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
 | Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); the event's rare forging scroll ×2 (60, 6%) and Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (45, 4.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
@@ -524,7 +524,8 @@ hours. Each event has one diamond of each rarity, and the events take turns thro
 | Top prize (big bag) | Fairy +42, Purple +44, Star +46 | Fairy: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Purple: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Star: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
 
 Every common bag's foods are a high-HP food (HP 800 or more, higher than its SP), a high-SP food (SP 600 or more,
-higher than its HP) and Pizza (Hawaii Pizza for Summer, Anniversary and Artisan Festival), which restores both. An event
+higher than its HP) and Pizza (Hawaii Pizza for Summer, Anniversary and Artisan Festival), which restores both; the
+Wishing Coin isn't a prize (its Holy Village pool gifts include Boarded Vouchers and the VIP Card). An event
 uses its own food when it has one that fits, and otherwise the events take turns through the strongest foods:
 
 | Event | High-HP food | High-SP food |
@@ -596,6 +597,7 @@ Mall items no event gives, on purpose:
 | Weak food | Fruit Cake, Neapolitan Sundaes |
 | Boxes whose contents are given directly | Training Box, New Year Box, New Year Pack, 2011 Ghost Pack, 2011 Big Egg, Glazed Stone Bag, Magic Set Box, Glaze Bag |
 | Pet gear, in the Gear Pack | the 13 "Special for ..." pet gear pieces |
+| Travel | Bamboo Dragonfly, Teleport Scroll, Normal GPS, Memory Crystal, and the Wishing Coin (its Holy Village pool gifts include 20 Boarded Vouchers and the VIP Card) |
 
 The common bags can't be traded and the big bags (the year "Pack"s) can, as in the original game. The 2013 Big Turkey only
 opens into food, so trading it in is worth more; the 2013 Big Box it is traded for is Thanksgiving's common
