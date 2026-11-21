@@ -235,7 +235,7 @@ public sealed class QuizHandlers(
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(Math.Max(0, options.Value.QuizStartSeconds))).ConfigureAwait(false);
-            var window = OpeningWindow(EventCalendar.ActivityQuiz);
+            var window = calendar.OpeningWindow(EventCalendar.ActivityQuiz);
             List<Player> joined;
             lock (_lock)
             {
@@ -361,42 +361,13 @@ public sealed class QuizHandlers(
     }
 
     /// <summary>
-    /// Names the opening window of an activity that is open now. A window of the weekly hours is named by its date and start time; when
-    /// activities are always open, or the activity has no hours, the whole local day counts as one window.
-    /// </summary>
-    /// <param name="activity">The calendar activity name, such as <see cref="EventCalendar.ActivityQuiz"/>.</param>
-    /// <returns>The window's name; null when the activity is closed now.</returns>
-    public string? OpeningWindow(string activity)
-    {
-        if (!calendar.ActivityOpen(activity))
-            return null;
-        var now = calendar.Clock();
-        var day = now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        if (calendar.ActivitiesAlwaysOpen)
-            return day;
-        foreach (var h in calendar.File.Activities)
-        {
-            if (string.Equals(h.Name, activity, StringComparison.OrdinalIgnoreCase) && h.Day == now.DayOfWeek
-                && TimeOfDay(h.Start) is { } from && TimeOfDay(h.End) is { } to && now.TimeOfDay >= from && now.TimeOfDay < to)
-                return $"{day} {h.Start}";
-        }
-        return day;
-    }
-
-    /// <summary>Reads a time of day of the weekly hours, written as <c>h:mm</c>.</summary>
-    /// <param name="text">The text to read.</param>
-    /// <returns>The time of day; null when the text is unreadable.</returns>
-    private static TimeSpan? TimeOfDay(string text) =>
-        TimeSpan.TryParseExact(text, @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
-
-    /// <summary>
     /// Gives the prize configured for a place, if the whole prize fits in the player's bag and the character has not won a prize of the
     /// activity in the same opening window. The caller holds the player's session gate.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="place">The final place, 1-based.</param>
     /// <param name="activity">The calendar activity the game belongs to, such as <see cref="EventCalendar.ActivityQuiz"/>.</param>
-    /// <param name="window">The opening window the game started in, from <see cref="OpeningWindow"/>.</param>
+    /// <param name="window">The opening window the game started in, from <see cref="EventCalendar.OpeningWindow"/>.</param>
     public void GivePrize(GameSession session, int place, string activity, string window)
     {
         if (_prizes.Find(p => place >= p.From && place <= p.To) is not { } prize || session.ActiveCharacter is not { } character
