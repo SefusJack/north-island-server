@@ -180,17 +180,21 @@ public static class Alchemy
         _ => CommonStone, // minerals and everything else
     };
 
-    /// <summary>Finds the item a failed compound degrades to: a lower-rank item of the same class as the main material.</summary>
+    /// <summary>
+    /// Finds the item a failed compound degrades to: a lower-rank item of the same class as the main material, picked at random. Players
+    /// recorded one compound degrading to different items, such as Chocolate and Chocolate giving each of the five rank 1 beans.
+    /// </summary>
     /// <param name="main">The item record of the main (first) material.</param>
     /// <param name="all">Every item of the game data.</param>
+    /// <param name="roll">Random source: returns a number from 0 up to but not including its argument.</param>
     /// <returns>
-    /// The item at the highest rank up to three below the main material's (rank 1 at the least), preferring the main material's type;
-    /// null when none exists.
+    /// One of the items at the highest rank up to three below the main material's (rank 1 at the least), each as likely; null when none exists.
     /// </returns>
-    public static ItemRecord? Degraded(ItemRecord main, IEnumerable<ItemRecord> all)
+    public static ItemRecord? Degraded(ItemRecord main, IEnumerable<ItemRecord> all, Func<int, int> roll)
     {
         var rank = Math.Max(1, main.ShopColumn - 3);
-        return all.Where(i => CanBeMade(i) && Class(i, 0) == Class(main, 0) && i.ShopColumn <= rank && i.Id != main.Id)
-            .OrderByDescending(i => i.ShopColumn).ThenBy(i => i.Type == main.Type ? 0 : 1).ThenBy(i => i.Id).FirstOrDefault();
+        var top = all.Where(i => CanBeMade(i) && Class(i, 0) == Class(main, 0) && i.ShopColumn <= rank && i.Id != main.Id)
+            .GroupBy(i => i.ShopColumn).MaxBy(g => g.Key)?.OrderBy(i => i.Id).ToList();
+        return top is { Count: > 0 } ? top[roll(top.Count)] : null;
     }
 }
