@@ -23,6 +23,6 @@ public sealed class TradeSide(
     /// <summary>Whether an offer has been made.</summary>
     public bool Offered { get; set; }
 
-    /// <summary>Whether this side has confirmed the current offers; a new offer from either side clears it on both.</summary>
+    /// <summary>Whether this side has confirmed the current offers; an offer from either side after that cancels the trade.</summary>
     public bool Confirmed { get; set; }
 }

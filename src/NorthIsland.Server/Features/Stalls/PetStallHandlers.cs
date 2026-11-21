@@ -10,36 +10,25 @@ namespace NorthIsland.Server.Features.Stalls;
 /// <param name="world">World state.</param>
 /// <param name="npcs">NPC data, for the kind of each pet.</param>
 /// <param name="items">Item data, for the gear the pets wear.</param>
+/// <param name="combat">Combat stats, resent when the seller gets off a pet they sell.</param>
 /// <param name="logger">Logger.</param>
 public sealed class PetStallHandlers(
     WorldState world,
     NpcData npcs,
     ItemData items,
+    CombatStats combat,
     ILogger<PetStallHandlers> logger)
 {
     /// <summary>Most pets one stall can offer.</summary>
     public const int MaxPets = 3;
 
-    /// <summary>NPC type of a reborn pet, which the client's pet trade never lets go to another player.</summary>
-    private const byte RebornType = 32; // npc type 32: reborn pet
-
-    /// <summary>
-    /// Tells why a pet of the seller cannot be sold, by the rules of the client's pet trade and pet stall: not tradable, no amity, a grow or reborn
-    /// kind, ridden, the fighting pet, offered in a pet trade, or wearing gear that cannot be traded.
-    /// </summary>
+    /// <summary>Tells why a pet of the seller cannot be sold, by <see cref="PetTransfer.Refusal"/>.</summary>
     /// <param name="session">The seller's session.</param>
     /// <param name="seller">The seller's character.</param>
     /// <param name="pet">The pet.</param>
     /// <returns>The reason, for the log, or null when the pet can be sold.</returns>
     private string? Unsellable(GameSession session, Character seller, Pet pet) =>
-        pet.Tradable == 0 ? "cannot be traded"
-            : pet.Amity == 0 ? "has no amity"
-                : npcs[pet.NpcId] is { } npc && (npc.GrowKey != 0 || npc.Type == RebornType) ? "is a kind that cannot be sold"
-                    : session.RidingPetSlot == pet.Slot ? "is ridden"
-                        : seller.ActivePetId == pet.NpcId ? "is the fighting pet"
-                            : session.Trades.Pets is { } trade && ReferenceEquals(trade.Of(session).Pet, pet) ? "is offered in a pet trade"
-                                : pet.Equipment.Exists(e => items[e.ItemId] is { } r && (r.Flags & Bag.NoTradeFlag) != 0) ? "wears gear that cannot be traded"
-                                    : null;
+        PetTransfer.Refusal(session, seller, pet, PetTransferVia.Stall, npcs, items)?.Why;
 
     /// <summary>Closes the player's pet stall and tells them and the map; nothing happens when none is open.</summary>
     /// <param name="session">The owner's session.</param>
@@ -178,7 +167,7 @@ public sealed class PetStallHandlers(
                 stall.Prices.Remove(pet.Slot);
                 stall.Offered.Remove(pet.Slot);
                 owner.Send(StallMessages.PetSold(pet.NpcId, price));
-                PetTradeHandlers.Give(world, owner, seller, pet);
+                Pets.Exile(owner, seller, pet, world, combat);
                 PetTradeHandlers.Receive(session, buyer, pet);
                 logger.LogInformation("[{Session}] {Buyer} buys pet {Pet} from {Seller}'s stall for {Gold}", session.Id, buyer.Name, pet.Name,
                     seller.Name, price);
