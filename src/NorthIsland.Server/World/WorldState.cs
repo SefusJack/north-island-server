@@ -18,12 +18,6 @@ public sealed class WorldState(
     InstanceRegistry instances,
     ILogger<WorldState> logger)
 {
-    /// <summary>
-    /// The instance init result (85/2) code 9 that tells a member left behind by an instance entry to go in through the instance window
-    /// (the client shows "Players are too busy to transmit instance").
-    /// </summary>
-    public const byte TooBusyForInstance = 9; // 85/2 code 9: players too busy to transmit to the instance
-
     /// <summary>The online sessions by player id.</summary>
     private readonly ConcurrentDictionary<int, GameSession> _online = new();
 
@@ -299,7 +293,7 @@ public sealed class WorldState(
     /// Gives why a team member may not be taken along by their leader's map change: they stand on another map or house room than the one
     /// the leader leaves (members follow their leader within the scene), something keeps them busy (<see cref="FollowRefusal"/>),
     /// the destination is an instance copy they are no member of, or it is a map no teleport reaches and the warp is no walk-in. A busy
-    /// member of the instance is told to go in through the instance window.
+    /// member of the instance left behind outside it is told to go in through the instance window.
     /// </summary>
     /// <param name="member">The member's session.</param>
     /// <param name="character">The member's active character.</param>
@@ -327,8 +321,8 @@ public sealed class WorldState(
         }
         if (FollowRefusal(member) is { } busy)
         {
-            if (instanceMember)
-                member.Send(InstanceMessages.InitResult(TooBusyForInstance));
+            if (instanceMember && fromMap != warp.MapId) // a member left behind outside the copy goes in through the instance window
+                member.Send(InstanceMessages.InitResult(InstanceInitCodes.TooBusy));
             return busy;
         }
         if (instanceCopy)

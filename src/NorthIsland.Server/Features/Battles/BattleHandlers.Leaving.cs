@@ -287,6 +287,7 @@ public sealed partial class BattleHandlers
         }
         if (alsoTell)
             logger.LogInformation("[{Session}] {Name} runs off; the others fight on", logSession.Id, player.Name);
+        instances.AfterBattle(session); // an instance that ended during the fight sends its player out now
     }
 
     /// <summary>Takes what a pet's fall in the battle costs: amity and experience, and rolls whether it runs away.</summary>

@@ -390,18 +390,43 @@ public sealed class InstanceHandlers(
 
     /// <summary>
     /// Sends out every player still standing on the map of an instance that has ended, members or not, so that nobody is left on the map copy
-    /// when it is handed to the next instance.
+    /// when it is handed to the next instance. A player in a battle stays until it ends (<see cref="AfterBattle"/>); one a leader's send-out
+    /// has already taken along is skipped.
     /// </summary>
     /// <param name="instance">The instance, already removed from the registry.</param>
     private void SendOutStayers(Instance instance)
     {
         foreach (var session in world.OnMap(instance.MapId).ToList())
         {
-            if (session.State != SessionState.InWorld || session.Account is null || session.ActiveCharacter is not { } character)
+            if (session.State != SessionState.InWorld || session.Account is null || session.ActiveCharacter is not { } character
+                || character.MapId != instance.MapId)
                 continue;
             logger.LogInformation("[{Session}] {Name} is sent out of the ended instance {Map}", session.Id, character.Name, instance.MapId);
             SendOut(session, character);
         }
+    }
+
+    /// <summary>
+    /// Sends a player whose battle has ended out of an instance map copy they no longer belong on: its instance ended while they fought (a
+    /// player in a battle is not sent out with the others), or the copy was handed to an instance they are no member of.
+    /// </summary>
+    /// <param name="session">The player's session, out of the battle.</param>
+    public void AfterBattle(GameSession session)
+    {
+        if (session.Closing || session.LeavingGame || session.State != SessionState.InWorld || session.Account is null
+            || session.ActiveCharacter is not { } character || maps.InstanceOfMap(character.MapId) is null)
+            return;
+        if (instances.ByMap(character.MapId) is { } instance)
+        {
+            lock (instance.Lock)
+            {
+                if (instance.Member(Id(session)) is not null)
+                    return;
+            }
+        }
+        logger.LogInformation("[{Session}] {Name} is sent out of instance map {Map} after a battle: no member of a live instance there", session.Id,
+            character.Name, character.MapId);
+        SendOut(session, character);
     }
 
     /// <summary>Sends a player out of an instance map to the return point, leaving their team when team members are still in the instance.</summary>
@@ -423,8 +448,8 @@ public sealed class InstanceHandlers(
 
     /// <summary>
     /// Handles pressing Enter (<c>85/9</c>): starts the instance if it is still waiting and moves the player to its entry point. Refused, as the
-    /// client refuses it (cannotTeleport), when the player is busy or stands on a map no teleport may leave (prison, maze, a house, another
-    /// instance copy, ...).
+    /// client refuses it (Instances::enter, cannotTeleport), when the player is busy or rides a vehicle (too busy), or stands on a map no
+    /// teleport may leave (prison, maze, a house, another instance copy, Carnie, ...).
     /// </summary>
     /// <param name="session">The player's session.</param>
     internal void Enter(GameSession session)
@@ -432,10 +457,12 @@ public sealed class InstanceHandlers(
         var character = session.ActiveCharacter!;
         if (instances.Of(Id(session)) is not { } instance || character.MapId == instance.MapId)
             return;
-        if (travel.LeaveRefusal(session, character) is { } why)
+        var busy = TravelRules.BusyRefusal(session) ?? (session.Vehicle is { Riding: true } ? "riding a vehicle" : null);
+        var why = busy ?? (character.MapId == CarnieReturn.Carnie ? "Carnie cannot be left this way" : travel.LeaveRefusal(session, character));
+        if (why is not null)
         {
             logger.LogWarning("[{Session}] {Name}: entering instance {Map} refused: {Why}", session.Id, character.Name, instance.MapId, why);
-            session.Send(InstanceMessages.InitResult(Codes.CannotTeleport));
+            session.Send(InstanceMessages.InitResult(busy is not null ? Codes.TooBusy : Codes.CannotTeleport));
             return;
         }
         lock (instance.Lock)
