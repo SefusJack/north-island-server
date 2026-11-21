@@ -234,7 +234,7 @@ public sealed partial class BattleHandlers(
     }
 
     /// <summary>
-    /// Puts a player in a battle and closes the service windows open for them, so a bank, store or sell window opened before the fight is not
+    /// Puts a player in a battle and closes the map-bound service windows open for them, so a bank, store or sell window opened before the fight is not
     /// served after it.
     /// </summary>
     /// <param name="session">The player's session.</param>
@@ -242,7 +242,7 @@ public sealed partial class BattleHandlers(
     private static void EnterBattle(GameSession session, Battle battle)
     {
         session.Battle = battle;
-        OpenServices.CloseAll(session);
+        OpenServices.CloseMapBound(session); // the item bag a Space Contract opened stays usable after the battle
     }
 
     /// <summary>Sends the fight start, battle type and weapon looks to the players, then tells the others on their map.</summary>

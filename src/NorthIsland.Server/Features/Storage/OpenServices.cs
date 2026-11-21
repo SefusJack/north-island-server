@@ -126,7 +126,7 @@ public sealed class OpenServices(
 
     /// <summary>Closes every map-bound service window of the session (<see cref="IsMapBound"/>).</summary>
     /// <param name="session">The player's session.</param>
-    private static void CloseMapBound(GameSession session)
+    public static void CloseMapBound(GameSession session)
     {
         var windows = StateOf(session).Windows;
         foreach (var (window, open) in windows)
