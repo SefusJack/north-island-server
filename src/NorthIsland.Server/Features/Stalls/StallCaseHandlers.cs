@@ -267,8 +267,8 @@ public sealed class StallCaseHandlers(
     }
 
     /// <summary>
-    /// Handles a purchase from a case: checks the buyer stands in the owner's house with the owner there, then price, gold and bag room, then moves
-    /// items and gold and tells the house.
+    /// Handles a purchase from a case: checks the buyer stands in the owner's house with the owner there, then, under the owner's session gate,
+    /// price, gold and bag room, then moves items and gold and tells the house.
     /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The packet body: the owner's login id, case number, count and the price the buyer saw.</param>
@@ -287,27 +287,47 @@ public sealed class StallCaseHandlers(
                 ownerId);
             return ValueTask.CompletedTask;
         }
-        var oc = owner.Character;
+        if (!ownerSession.TryExclusiveFrom(session, out var held)) // the owner's own packet may be changing the cases or the gold
+        {
+            logger.LogWarning("[{Session}] {Name}: stall case buy refused, {Owner}'s session is busy", session.Id, me.Name, ownerId);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+            Buy(session, me, ownerSession, owner.Character, ownerId, caseNo, count, price);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Carries out a purchase from a case under the owner's session gate: price, gold and bag room, then items and gold.</summary>
+    /// <param name="session">The buyer's session.</param>
+    /// <param name="me">The buyer's character.</param>
+    /// <param name="ownerSession">The owner's session, whose gate the caller holds.</param>
+    /// <param name="oc">The owner's character.</param>
+    /// <param name="ownerId">The owner's login id.</param>
+    /// <param name="caseNo">The case number.</param>
+    /// <param name="count">How many to buy.</param>
+    /// <param name="price">The unit price the buyer saw.</param>
+    private void Buy(GameSession session, Character me, GameSession ownerSession, Character oc, int ownerId, byte caseNo, byte count, int price)
+    {
         var stall = oc.StallCases.Find(x => x.Case == caseNo);
         if (stall is null || count == 0 || count > stall.Stock)
-            return ValueTask.CompletedTask;
+            return;
         if (stall.Price != price)
         {
             session.Send(Refuse(3));
-            return ValueTask.CompletedTask;
+            return;
         }
         var total = (long)price * count;
         if (me.Gold < total || oc.Gold + total > BankHandlers.MaxGold)
         {
             logger.LogWarning("[{Session}] {Name} cannot buy from {Owner}'s stall case: {Why}", session.Id, me.Name, oc.Name,
                 me.Gold < total ? "not enough gold" : "the owner's purse is full");
-            return ValueTask.CompletedTask;
+            return;
         }
         var trial = me.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count)).ToList();
         if (Bag.Add(trial, items, stall.ItemId, count, stall.Wear).Sum(x => x.Added) != count)
         {
             session.Send(Refuse(5));
-            return ValueTask.CompletedTask;
+            return;
         }
         me.Gold -= (int)total;
         session.Send(PlayerMessages.MoneyChange(-(int)total));
@@ -329,7 +349,6 @@ public sealed class StallCaseHandlers(
             items[stall.ItemId]?.Name.Trim(),
             oc.Name,
             total);
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>Shows the cases of the house to a player who has entered it.</summary>

@@ -232,7 +232,7 @@ public sealed class HomeShopHandlers(
     /// <summary>
     /// Handles <c>62/23</c> (shelf) and <c>62/26</c> (vending machine): a visitor in the owner's house buys from an offer, paying the owner at once.
     /// The buyer gets the owner's bag stack as it is; when it is no longer the stack the offer was made from (another item, other attributes or
-    /// fewer items), the offer is taken down instead.
+    /// fewer items), the offer is taken down instead. Everything after finding the owner runs under the owner's session gate.
     /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The owner's login id, the offer id, the count, the item id and the unit price the buyer saw.</param>
@@ -249,35 +249,67 @@ public sealed class HomeShopHandlers(
         if (ownerId == session.Account.LoginId || tents.HouseOwnerFor(me, ownerId) is not { Session: { } ownerSession } owner
             || owner.Character.MapId != me.MapId)
             return ValueTask.CompletedTask;
-        var oc = owner.Character;
+        if (!ownerSession.TryExclusiveFrom(session, out var held)) // the owner's own packet may be moving, selling or trading the listed stack
+        {
+            logger.LogWarning("[{Session}] {Name}: buy offer {Id} of {Owner} refused: the owner's session is busy", session.Id, me.Name, id, ownerId);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+            Buy(session, me, ownerSession, owner.Character, ownerId, id, count, itemId, price, vending);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Carries out a purchase from a shelf or vending machine offer under the owner's session gate.</summary>
+    /// <param name="session">The buyer's session.</param>
+    /// <param name="me">The buyer's character.</param>
+    /// <param name="ownerSession">The owner's session, whose gate the caller holds.</param>
+    /// <param name="oc">The owner's character.</param>
+    /// <param name="ownerId">The owner's login id.</param>
+    /// <param name="id">The offer id.</param>
+    /// <param name="count">How many to buy.</param>
+    /// <param name="itemId">The item the buyer saw.</param>
+    /// <param name="price">The unit price the buyer saw.</param>
+    /// <param name="vending">True for a vending machine, false for a shelf.</param>
+    private void Buy(
+        GameSession session,
+        Character me,
+        GameSession ownerSession,
+        Character oc,
+        int ownerId,
+        ushort id,
+        byte count,
+        ushort itemId,
+        int price,
+        bool vending)
+    {
         var piece = oc.Furniture.Find(f => IsShop(f, vending) && f.Stock.Exists(s => s.Id == id));
         var offer = piece?.Stock.Find(s => s.Id == id);
         if (piece is null || offer is null || offer.ItemId != itemId || count == 0 || count > offer.Count)
-            return ValueTask.CompletedTask;
+            return;
         if (offer.Price != price)
         {
             session.Send(Refuse(3)); // code
-            return ValueTask.CompletedTask;
+            return;
         }
         var bag = oc.Bag.Find(b => b.Slot == offer.BagCell);
         if (bag is null || !Matches(bag, offer) || bag.Count < count || SaleRefusal(items, ownerSession, bag) is not null)
         {
             logger.LogWarning("[{Session}] {Name}: buy offer {Id} of {Owner}: the bag stack changed, the offer is taken down", session.Id, me.Name, id, oc.Name);
             TakeDown(ownerSession, oc, piece, offer);
-            return ValueTask.CompletedTask;
+            return;
         }
         var total = (long)price * count;
         if (me.Gold < total || oc.Gold + total > BankHandlers.MaxGold)
         {
             logger.LogWarning("[{Session}] {Name}: buy offer {Id} of {Owner} for {Total}: not enough gold or the seller's purse is full", session.Id, me.Name,
                 id, oc.Name, total);
-            return ValueTask.CompletedTask;
+            return;
         }
         var trial = Bag.Trial(me.Bag);
         if (Bag.Add(trial, items, bag.ItemId, count, bag.Wear).Sum(x => x.Added) != count)
         {
             session.Send(Refuse(5)); // code
-            return ValueTask.CompletedTask;
+            return;
         }
         me.Gold -= (int)total;
         session.Send(PlayerMessages.MoneyChange(-(int)total));
@@ -302,7 +334,6 @@ public sealed class HomeShopHandlers(
             items[itemId]?.Name.Trim(),
             oc.Name,
             total);
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>Shows the offers of the house's shelves and vending machines to the player who entered.</summary>

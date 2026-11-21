@@ -100,8 +100,8 @@ public sealed class StallHandlers(
     private const int BuyLineSize = 8;
 
     /// <summary>
-    /// Buys items from a stall on the buyer's map: checks each line against the stack the stall opened with and the price the buyer was shown,
-    /// then gold and bag room, then moves items and gold.
+    /// Buys items from a stall on the buyer's map: under the seller's session gate, checks each line against the stack the stall opened with and
+    /// the price the buyer was shown, then gold and bag room, then moves items and gold.
     /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">
@@ -123,66 +123,73 @@ public sealed class StallHandlers(
         if (seller.MapId != buyer.MapId)
             return Failed(session, $"{seller.Name} is on another map");
 
-        lock (stall)
+        if (!owner.TryExclusiveFrom(session, out var held)) // the seller's own packet may be selling, moving or trading the same stacks
+            return Failed(session, $"{seller.Name}'s session is busy");
+        using (held)
         {
-            var lines = new List<(BagItem Stack, BagItem Offered, byte Count, int Price)>();
-            foreach (var (slot, count, itemId) in wanted)
+            if (!ReferenceEquals(owner.Stalls.Items, stall))
+                return Failed(session, "the stall closed");
+            lock (stall)
             {
-                var priced = stall.Prices.TryGetValue(slot, out var price);
-                var offered = stall.Offered.GetValueOrDefault(slot);
-                var stack = offered is null ? null : StallStock.Find(seller, owner, slot, offered);
-                var why = !priced || offered is null ? "not on offer"
-                    : stack is null ? "no longer the stack the stall opened with"
-                        : stack.ItemId != itemId || count == 0 || count > stack.Count ? "not that many of that item"
-                            : StallStock.Untransferable(items, stack) is { } untransferable ? untransferable
-                                : !StallView.Saw(session.Stalls.SeenItems, stall, slot, price) ? "not the price the buyer was shown"
-                                    : null;
-                if (why is not null)
+                var lines = new List<(BagItem Stack, BagItem Offered, byte Count, int Price)>();
+                foreach (var (slot, count, itemId) in wanted)
                 {
-                    logger.LogWarning("[{Session}] stall buy: slot {Slot} x{Count} of {Item} refused: {Why}", session.Id, slot, count, itemId, why);
-                    Show(session, ownerId, stall, owner, seller);
-                    return ValueTask.CompletedTask;
+                    var priced = stall.Prices.TryGetValue(slot, out var price);
+                    var offered = stall.Offered.GetValueOrDefault(slot);
+                    var stack = offered is null ? null : StallStock.Find(seller, owner, slot, offered);
+                    var why = !priced || offered is null ? "not on offer"
+                        : stack is null ? "no longer the stack the stall opened with"
+                            : stack.ItemId != itemId || count == 0 || count > stack.Count ? "not that many of that item"
+                                : StallStock.Untransferable(items, stack) is { } untransferable ? untransferable
+                                    : !StallView.Saw(session.Stalls.SeenItems, stall, slot, price) ? "not the price the buyer was shown"
+                                        : null;
+                    if (why is not null)
+                    {
+                        logger.LogWarning("[{Session}] stall buy: slot {Slot} x{Count} of {Item} refused: {Why}", session.Id, slot, count, itemId, why);
+                        Show(session, ownerId, stall, owner, seller);
+                        return ValueTask.CompletedTask;
+                    }
+                    lines.Add((stack!, offered!, count, price));
                 }
-                lines.Add((stack!, offered!, count, price));
-            }
-            var total = lines.Sum(l => (long)l.Price * l.Count);
-            if (total > buyer.Gold || (long)seller.Gold + total > BankHandlers.MaxGold)
-                return Failed(session, "gold");
-            List<BagItem> trial = [.. buyer.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count))];
-            if (!lines.All(l => Add(trial, l.Stack, l.Count).Sum(c => c.Added) == l.Count))
-                return Failed(session, "bag");
+                var total = lines.Sum(l => (long)l.Price * l.Count);
+                if (total > buyer.Gold || (long)seller.Gold + total > BankHandlers.MaxGold)
+                    return Failed(session, "gold");
+                List<BagItem> trial = [.. buyer.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count))];
+                if (!lines.All(l => Add(trial, l.Stack, l.Count).Sum(c => c.Added) == l.Count))
+                    return Failed(session, "bag");
 
-            long paid = 0;
-            foreach (var (stack, offered, count, price) in lines)
-            {
-                if (!seller.Bag.Contains(stack) || stack.Count < count) // checked above; never take more than the stack holds
+                long paid = 0;
+                foreach (var (stack, offered, count, price) in lines)
                 {
-                    logger.LogError("[{Session}] stall buy: slot {Slot} changed during the sale, line skipped", session.Id, stack.Slot);
-                    continue;
+                    if (!seller.Bag.Contains(stack) || stack.Count < count) // checked above; never take more than the stack holds
+                    {
+                        logger.LogError("[{Session}] stall buy: slot {Slot} changed during the sale, line skipped", session.Id, stack.Slot);
+                        continue;
+                    }
+                    var (slot, itemId) = (stack.Slot, stack.ItemId);
+                    var sold = GridStore.Copy(stack, slot, count);
+                    stack.Count -= count;
+                    offered.Count -= count;
+                    if (stack.Count == 0)
+                    {
+                        seller.Bag.Remove(stack);
+                        stall.Prices.Remove(slot);
+                        stall.Offered.Remove(slot);
+                    }
+                    owner.Send(ItemMessages.BagSlotDecrease(slot, count));
+                    owner.Send(StallMessages.Sold(itemId, count, price * count, slot));
+                    Bag.SendAdded(session, Add(buyer.Bag, sold, count));
+                    paid += (long)price * count;
+                    logger.LogInformation("[{Session}] {Buyer} buys {Item} x{Count} from {Seller}'s stall for {Gold}", session.Id, buyer.Name,
+                        items[itemId]?.Name, count, seller.Name, price * count);
                 }
-                var (slot, itemId) = (stack.Slot, stack.ItemId);
-                var sold = GridStore.Copy(stack, slot, count);
-                stack.Count -= count;
-                offered.Count -= count;
-                if (stack.Count == 0)
-                {
-                    seller.Bag.Remove(stack);
-                    stall.Prices.Remove(slot);
-                    stall.Offered.Remove(slot);
-                }
-                owner.Send(ItemMessages.BagSlotDecrease(slot, count));
-                owner.Send(StallMessages.Sold(itemId, count, price * count, slot));
-                Bag.SendAdded(session, Add(buyer.Bag, sold, count));
-                paid += (long)price * count;
-                logger.LogInformation("[{Session}] {Buyer} buys {Item} x{Count} from {Seller}'s stall for {Gold}", session.Id, buyer.Name,
-                    items[itemId]?.Name, count, seller.Name, price * count);
+                buyer.Gold -= (int)paid;
+                session.Send(PlayerMessages.MoneyChange(-(int)paid));
+                seller.Gold += (int)paid;
+                owner.Send(PlayerMessages.MoneyChange((int)paid));
+                if (stall.Prices.Count == 0)
+                    Close(owner, world);
             }
-            buyer.Gold -= (int)paid;
-            session.Send(PlayerMessages.MoneyChange(-(int)paid));
-            seller.Gold += (int)paid;
-            owner.Send(PlayerMessages.MoneyChange((int)paid));
-            if (stall.Prices.Count == 0)
-                Close(owner, world);
         }
         return ValueTask.CompletedTask;
     }

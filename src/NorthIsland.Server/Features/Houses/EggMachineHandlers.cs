@@ -240,7 +240,7 @@ public sealed class EggMachineHandlers(
 
     /// <summary>
     /// Handles <c>62/33</c>: a visitor standing in the owner's house (not the owner) pays the price and gets one item from a randomly picked
-    /// filled cell; the owner is paid.
+    /// filled cell; the owner is paid. The play runs under the owner's session gate.
     /// </summary>
     /// <param name="session">The visitor's session.</param>
     /// <param name="body">The owner's login id, the furniture index (two bytes) and the price the visitor saw.</param>
@@ -253,39 +253,63 @@ public sealed class EggMachineHandlers(
         var price = BinaryPrimitives.ReadInt32LittleEndian(body.Span[6..]);
         if (ownerId == session.Account.LoginId
             || tents.HouseOwnerFor(me, ownerId) is not { Session: { } ownerSession } owner
-            || owner.Character.MapId != me.MapId
-            || owner.Character.Furniture.Find(f => f.Index == furn) is not { } piece
-            || !IsEggMachine(piece.ItemId))
+            || owner.Character.MapId != me.MapId)
         {
             logger.LogWarning("[{Session}] {Name}: play egg machine {Furn} of {Owner}: not a visitor in that house", session.Id, me.Name, furn, ownerId);
             return ValueTask.CompletedTask;
         }
+        if (!ownerSession.TryExclusiveFrom(session, out var held)) // the owner's own packet may be filling, retaking or pricing the machine
+        {
+            logger.LogWarning("[{Session}] {Name}: play egg machine {Furn} of {Owner}: the owner's session is busy", session.Id, me.Name, furn,
+                ownerId);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+            Play(session, me, ownerSession, owner.Character, ownerId, furn, price);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Plays an egg machine under the owner's session gate: checks the price, the eggs, the gold and the bag, then gives one item.</summary>
+    /// <param name="session">The visitor's session.</param>
+    /// <param name="me">The visitor's character.</param>
+    /// <param name="ownerSession">The owner's session, whose gate the caller holds.</param>
+    /// <param name="oc">The owner's character.</param>
+    /// <param name="ownerId">The owner's login id.</param>
+    /// <param name="furn">The furniture index of the machine.</param>
+    /// <param name="price">The price the visitor saw.</param>
+    private void Play(GameSession session, Character me, GameSession ownerSession, Character oc, int ownerId, ushort furn, int price)
+    {
+        if (oc.Furniture.Find(f => f.Index == furn) is not { } piece || !IsEggMachine(piece.ItemId))
+        {
+            logger.LogWarning("[{Session}] {Name}: play egg machine {Furn} of {Owner}: no such machine", session.Id, me.Name, furn, ownerId);
+            return;
+        }
         if (piece.SalePrice != price)
         {
             session.Send(Refuse(3)); // code
-            return ValueTask.CompletedTask;
+            return;
         }
         if (piece.Eggs == 0 || piece.SalePrice <= 0)
         {
             session.Send(Refuse(2)); // code
-            return ValueTask.CompletedTask;
+            return;
         }
         var filled = piece.Stock.Where(s => s.Count > 0).ToList();
-        if (me.Gold < price || filled.Count == 0 || (long)owner.Character.Gold + price > BankHandlers.MaxGold)
+        if (me.Gold < price || filled.Count == 0 || (long)oc.Gold + price > BankHandlers.MaxGold)
         {
             logger.LogWarning("[{Session}] {Name}: play egg machine {Furn} of {Owner}: not enough gold, empty, or the owner's purse is full", session.Id,
                 me.Name, furn, ownerId);
-            return ValueTask.CompletedTask;
+            return;
         }
         var pick = filled[GameRandom.Shared.Next(filled.Count)];
         if (Give(Bag.Trial(me.Bag), pick, 1).Sum(x => x.Added) != 1)
         {
             session.Send(Refuse(5)); // code
-            return ValueTask.CompletedTask;
+            return;
         }
         me.Gold -= price;
         session.Send(PlayerMessages.MoneyChange(-price));
-        owner.Character.Gold += price;
+        oc.Gold += price;
         ownerSession.Send(PlayerMessages.MoneyChange(price));
         Bag.SendAdded(session, Give(me.Bag, pick, 1));
         piece.Eggs--;
@@ -298,7 +322,7 @@ public sealed class EggMachineHandlers(
         }
         var eggs = EggsPacket(piece);
         var priceNow = PricePacket(piece);
-        foreach (var s in InHouse(owner.Character, ownerSession))
+        foreach (var s in InHouse(oc, ownerSession))
         {
             s.Send(eggs);
             if (piece.SalePrice == 0)
@@ -308,10 +332,9 @@ public sealed class EggMachineHandlers(
             "[{Session}] {Name} plays {Owner}'s egg machine {Furn} and gets {Item}",
             session.Id,
             me.Name,
-            owner.Character.Name,
+            oc.Name,
             furn,
             items[pick.ItemId]?.Name.Trim());
-        return ValueTask.CompletedTask;
     }
 
     /// <summary>Sends the price and token eggs of the owner's machines to everybody who enters the house, and the cells to the owner.</summary>

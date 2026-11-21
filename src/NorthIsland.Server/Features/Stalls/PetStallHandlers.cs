@@ -107,8 +107,8 @@ public sealed class PetStallHandlers(
     }
 
     /// <summary>
-    /// Buys pets from a stall on the buyer's map: checks each pet is still the one the stall opened with, can still be sold and is at the price
-    /// the buyer was shown, then gold, room and duplicate kinds, then moves the pets and the gold.
+    /// Buys pets from a stall on the buyer's map: under the seller's session gate, checks each pet is still the one the stall opened with, can
+    /// still be sold and is at the price the buyer was shown, then gold, room and duplicate kinds, then moves the pets and the gold.
     /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The packet body: the owner's login id, then the pet slots.</param>
@@ -128,58 +128,72 @@ public sealed class PetStallHandlers(
             return ValueTask.CompletedTask;
         }
 
-        lock (stall)
+        if (!owner.TryExclusiveFrom(session, out var held)) // the seller's own packet may be trading, releasing or moving the same pets
         {
-            List<(Pet Pet, int Price)> lines = [];
-            foreach (var slot in slots)
+            logger.LogWarning("[{Session}] {Buyer} cannot buy from {Seller}'s pet stall: the seller's session is busy", session.Id, buyer.Name,
+                seller.Name);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+        {
+            if (!ReferenceEquals(owner.Stalls.Pets, stall))
             {
-                var priced = stall.Prices.TryGetValue(slot, out var price);
-                var pet = seller.Pets.Find(p => p.Slot == slot);
-                var why = !priced || !stall.Offered.TryGetValue(slot, out var offered) ? "not on offer"
-                    : pet is null || !ReferenceEquals(pet, offered) ? "no longer the pet the stall opened with"
-                        : owner.Battle is not null ? "the seller is in a battle"
-                            : Unsellable(owner, seller, pet) is { } unsellable ? unsellable
-                                : !StallView.Saw(session.Stalls.SeenPets, stall, slot, price) ? "not the price the buyer was shown"
-                                    : null;
-                if (why is not null)
-                {
-                    logger.LogWarning("[{Session}] pet stall buy: slot {Slot} refused: {Why}", session.Id, slot, why);
-                    Show(session, ownerId, stall, owner, seller);
-                    return ValueTask.CompletedTask;
-                }
-                lines.Add((pet!, price));
-            }
-            var total = lines.Sum(l => (long)l.Price);
-            string? refusal = total > buyer.Gold ? "not enough gold"
-                : (long)seller.Gold + total > BankHandlers.MaxGold ? "the seller's purse is full"
-                    : buyer.Pets.Count + lines.Count > Pet.MaxPets ? "too many pets"
-                        : lines.Exists(l => buyer.Pets.Exists(p => p.NpcId == l.Pet.NpcId)) || lines.DistinctBy(l => l.Pet.NpcId).Count() != lines.Count
-                            ? "has that kind of pet"
-                            : null;
-            if (refusal is not null)
-            {
-                logger.LogInformation("[{Session}] {Buyer} cannot buy from {Seller}'s pet stall: {Why}", session.Id, buyer.Name, seller.Name, refusal);
+                session.Send(StallMessages.PetStallClosed(ownerId));
                 return ValueTask.CompletedTask;
             }
-
-            foreach (var (pet, price) in lines)
+            lock (stall)
             {
-                stall.Prices.Remove(pet.Slot);
-                stall.Offered.Remove(pet.Slot);
-                owner.Send(StallMessages.PetSold(pet.NpcId, price));
-                Pets.Exile(owner, seller, pet, world, combat);
-                PetTradeHandlers.Receive(session, buyer, pet);
-                logger.LogInformation("[{Session}] {Buyer} buys pet {Pet} from {Seller}'s stall for {Gold}", session.Id, buyer.Name, pet.Name,
-                    seller.Name, price);
+                List<(Pet Pet, int Price)> lines = [];
+                foreach (var slot in slots)
+                {
+                    var priced = stall.Prices.TryGetValue(slot, out var price);
+                    var pet = seller.Pets.Find(p => p.Slot == slot);
+                    var why = !priced || !stall.Offered.TryGetValue(slot, out var offered) ? "not on offer"
+                        : pet is null || !ReferenceEquals(pet, offered) ? "no longer the pet the stall opened with"
+                            : owner.Battle is not null ? "the seller is in a battle"
+                                : Unsellable(owner, seller, pet) is { } unsellable ? unsellable
+                                    : !StallView.Saw(session.Stalls.SeenPets, stall, slot, price) ? "not the price the buyer was shown"
+                                        : null;
+                    if (why is not null)
+                    {
+                        logger.LogWarning("[{Session}] pet stall buy: slot {Slot} refused: {Why}", session.Id, slot, why);
+                        Show(session, ownerId, stall, owner, seller);
+                        return ValueTask.CompletedTask;
+                    }
+                    lines.Add((pet!, price));
+                }
+                var total = lines.Sum(l => (long)l.Price);
+                string? refusal = total > buyer.Gold ? "not enough gold"
+                    : (long)seller.Gold + total > BankHandlers.MaxGold ? "the seller's purse is full"
+                        : buyer.Pets.Count + lines.Count > Pet.MaxPets ? "too many pets"
+                            : lines.Exists(l => buyer.Pets.Exists(p => p.NpcId == l.Pet.NpcId)) || lines.DistinctBy(l => l.Pet.NpcId).Count() != lines.Count
+                                ? "has that kind of pet"
+                                : null;
+                if (refusal is not null)
+                {
+                    logger.LogInformation("[{Session}] {Buyer} cannot buy from {Seller}'s pet stall: {Why}", session.Id, buyer.Name, seller.Name, refusal);
+                    return ValueTask.CompletedTask;
+                }
+
+                foreach (var (pet, price) in lines)
+                {
+                    stall.Prices.Remove(pet.Slot);
+                    stall.Offered.Remove(pet.Slot);
+                    owner.Send(StallMessages.PetSold(pet.NpcId, price));
+                    Pets.Exile(owner, seller, pet, world, combat);
+                    PetTradeHandlers.Receive(session, buyer, pet);
+                    logger.LogInformation("[{Session}] {Buyer} buys pet {Pet} from {Seller}'s stall for {Gold}", session.Id, buyer.Name, pet.Name,
+                        seller.Name, price);
+                }
+                buyer.Gold -= (int)total;
+                session.Send(PlayerMessages.MoneyChange(-(int)total));
+                seller.Gold += (int)total;
+                owner.Send(PlayerMessages.MoneyChange((int)total));
+                if (stall.Prices.Count == 0)
+                    Close(owner, world);
+                else
+                    Show(session, ownerId, stall, owner, seller);
             }
-            buyer.Gold -= (int)total;
-            session.Send(PlayerMessages.MoneyChange(-(int)total));
-            seller.Gold += (int)total;
-            owner.Send(PlayerMessages.MoneyChange((int)total));
-            if (stall.Prices.Count == 0)
-                Close(owner, world);
-            else
-                Show(session, ownerId, stall, owner, seller);
         }
         return ValueTask.CompletedTask;
     }

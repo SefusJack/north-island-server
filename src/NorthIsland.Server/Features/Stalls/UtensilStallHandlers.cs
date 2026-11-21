@@ -118,8 +118,8 @@ public sealed class UtensilStallHandlers(
     }
 
     /// <summary>
-    /// Buys goods from a stall on the buyer's map: checks each line against the stack the stall opened with (the request names no item) and the
-    /// price the buyer was shown, then gold and bag room, then moves the goods and the gold.
+    /// Buys goods from a stall on the buyer's map: under the seller's session gate, checks each line against the stack the stall opened with (the
+    /// request names no item) and the price the buyer was shown, then gold and bag room, then moves the goods and the gold.
     /// </summary>
     /// <param name="session">The buyer's session.</param>
     /// <param name="body">The packet body: the owner's login id, then pairs of bag slot and count.</param>
@@ -144,82 +144,96 @@ public sealed class UtensilStallHandlers(
             return ValueTask.CompletedTask;
         }
 
-        lock (stall)
+        if (!owner.TryExclusiveFrom(session, out var held)) // the seller's own packet may be selling, moving or trading the same stacks
         {
-            long total = 0;
-            var trial = buyer.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count)).ToList();
-            var sales = new List<(BagItem Stack, BagItem Offered, byte Count, int Price)>();
-            foreach (var (slot, count) in lines)
+            logger.LogWarning("[{Session}] {Buyer} cannot buy from {Seller}'s large-item stall: the seller's session is busy", session.Id, buyer.Name,
+                seller.Name);
+            return ValueTask.CompletedTask;
+        }
+        using (held)
+        {
+            if (!ReferenceEquals(owner.Stalls.Utensils, stall))
             {
-                var priced = stall.Prices.TryGetValue(slot, out var price);
-                var offered = stall.Offered.GetValueOrDefault(slot);
-                var stack = offered is null ? null : StallStock.Find(seller, owner, slot, offered);
-                var why = !priced || offered is null ? "not on offer"
-                    : stack is null ? "no longer the stack the stall opened with"
-                        : !Stallable(stack) ? "cannot be sold in a large-item stall"
-                            : count == 0 || count > stack.Count || (!Bag.IsStackable(items[stack.ItemId]) && count != 1) ? "not that many"
-                                : !StallView.Saw(session.Stalls.SeenUtensils, stall, slot, price) ? "not the price the buyer was shown"
-                                    : Give(trial, stack, count) == 0 ? "no room in the buyer's bag"
-                                        : null;
-                if (why is not null)
-                {
-                    logger.LogWarning("[{Session}] large-item stall buy: slot {Slot} x{Count} refused: {Why}", session.Id, slot, count, why);
-                    Show(session, ownerId, stall, owner, seller);
-                    return ValueTask.CompletedTask;
-                }
-                sales.Add((stack!, offered!, count, price));
-                total += (long)price * count;
-            }
-            if (total > buyer.Gold || (long)seller.Gold + total > BankHandlers.MaxGold)
-            {
-                logger.LogInformation(
-                    "[{Session}] {Buyer} cannot buy from {Seller}'s large-item stall: {Why}",
-                    session.Id,
-                    buyer.Name,
-                    seller.Name,
-                    total > buyer.Gold ? "not enough gold" : "the seller's purse is full");
+                session.Send(StallMessages.UtensilClosed(ownerId));
                 return ValueTask.CompletedTask;
             }
-            long paid = 0;
-            foreach (var (stack, offered, count, price) in sales)
+            lock (stall)
             {
-                if (!seller.Bag.Contains(stack) || stack.Count < count) // checked above; never take more than the stack holds
+                long total = 0;
+                var trial = buyer.Bag.Select(b => GridStore.Copy(b, b.Slot, b.Count)).ToList();
+                var sales = new List<(BagItem Stack, BagItem Offered, byte Count, int Price)>();
+                foreach (var (slot, count) in lines)
                 {
-                    logger.LogError("[{Session}] large-item stall buy: slot {Slot} changed during the sale, line skipped", session.Id, stack.Slot);
-                    continue;
+                    var priced = stall.Prices.TryGetValue(slot, out var price);
+                    var offered = stall.Offered.GetValueOrDefault(slot);
+                    var stack = offered is null ? null : StallStock.Find(seller, owner, slot, offered);
+                    var why = !priced || offered is null ? "not on offer"
+                        : stack is null ? "no longer the stack the stall opened with"
+                            : !Stallable(stack) ? "cannot be sold in a large-item stall"
+                                : count == 0 || count > stack.Count || (!Bag.IsStackable(items[stack.ItemId]) && count != 1) ? "not that many"
+                                    : !StallView.Saw(session.Stalls.SeenUtensils, stall, slot, price) ? "not the price the buyer was shown"
+                                        : Give(trial, stack, count) == 0 ? "no room in the buyer's bag"
+                                            : null;
+                    if (why is not null)
+                    {
+                        logger.LogWarning("[{Session}] large-item stall buy: slot {Slot} x{Count} refused: {Why}", session.Id, slot, count, why);
+                        Show(session, ownerId, stall, owner, seller);
+                        return ValueTask.CompletedTask;
+                    }
+                    sales.Add((stack!, offered!, count, price));
+                    total += (long)price * count;
                 }
-                var slot = stack.Slot;
-                var added = GiveReal(buyer, stack, count);
-                foreach (var entry in added)
-                    session.Send(ItemMessages.BagAdd(entry));
-                stack.Count -= count;
-                offered.Count -= count;
-                paid += (long)price * count;
-                owner.Send(ItemMessages.BagSlotDecrease(slot, count));
-                owner.Send(new PacketWriter(Action23.Code, Action23.UtensilStallSale).U8(1).U16(stack.ItemId).U8(count).I32(price * count).U8(slot).ToArray());
-                if (stack.Count == 0)
+                if (total > buyer.Gold || (long)seller.Gold + total > BankHandlers.MaxGold)
                 {
-                    seller.Bag.Remove(stack);
-                    stall.Prices.Remove(slot);
-                    stall.Offered.Remove(slot);
+                    logger.LogInformation(
+                        "[{Session}] {Buyer} cannot buy from {Seller}'s large-item stall: {Why}",
+                        session.Id,
+                        buyer.Name,
+                        seller.Name,
+                        total > buyer.Gold ? "not enough gold" : "the seller's purse is full");
+                    return ValueTask.CompletedTask;
                 }
-                logger.LogInformation(
-                    "[{Session}] {Buyer} buys {Item} x{Count} from {Seller}'s large-item stall for {Gold}",
-                    session.Id,
-                    buyer.Name,
-                    items[stack.ItemId]?.Name.Trim(),
-                    count,
-                    seller.Name,
-                    price * count);
+                long paid = 0;
+                foreach (var (stack, offered, count, price) in sales)
+                {
+                    if (!seller.Bag.Contains(stack) || stack.Count < count) // checked above; never take more than the stack holds
+                    {
+                        logger.LogError("[{Session}] large-item stall buy: slot {Slot} changed during the sale, line skipped", session.Id, stack.Slot);
+                        continue;
+                    }
+                    var slot = stack.Slot;
+                    var added = GiveReal(buyer, stack, count);
+                    foreach (var entry in added)
+                        session.Send(ItemMessages.BagAdd(entry));
+                    stack.Count -= count;
+                    offered.Count -= count;
+                    paid += (long)price * count;
+                    owner.Send(ItemMessages.BagSlotDecrease(slot, count));
+                    owner.Send(new PacketWriter(Action23.Code, Action23.UtensilStallSale).U8(1).U16(stack.ItemId).U8(count).I32(price * count).U8(slot).ToArray());
+                    if (stack.Count == 0)
+                    {
+                        seller.Bag.Remove(stack);
+                        stall.Prices.Remove(slot);
+                        stall.Offered.Remove(slot);
+                    }
+                    logger.LogInformation(
+                        "[{Session}] {Buyer} buys {Item} x{Count} from {Seller}'s large-item stall for {Gold}",
+                        session.Id,
+                        buyer.Name,
+                        items[stack.ItemId]?.Name.Trim(),
+                        count,
+                        seller.Name,
+                        price * count);
+                }
+                buyer.Gold -= (int)paid;
+                session.Send(PlayerMessages.MoneyChange(-(int)paid));
+                seller.Gold += (int)paid;
+                owner.Send(PlayerMessages.MoneyChange((int)paid));
+                if (stall.Prices.Count == 0)
+                    Close(owner, world);
+                else
+                    Show(session, ownerId, stall, owner, seller);
             }
-            buyer.Gold -= (int)paid;
-            session.Send(PlayerMessages.MoneyChange(-(int)paid));
-            seller.Gold += (int)paid;
-            owner.Send(PlayerMessages.MoneyChange((int)paid));
-            if (stall.Prices.Count == 0)
-                Close(owner, world);
-            else
-                Show(session, ownerId, stall, owner, seller);
         }
         return ValueTask.CompletedTask;
     }
