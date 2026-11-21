@@ -31,12 +31,6 @@ public sealed class HomeShopHandlers(
     public const ushort FirstNonTransferable = 61063, LastNonTransferable = 61078; // 61063 Morning Star Crystal, 61078 Charm Crystal
 
     /// <summary>
-    /// The item type of vehicles, whose capsules cannot be sold or stored; the same type the bag keeps from stacking (Bag.VehicleType, private
-    /// there).
-    /// </summary>
-    public const byte VehicleType = 39;
-
-    /// <summary>
     /// Returns why a bag stack cannot be sold from a house shop or egg machine, by the client's rules (StallDropRules, EggSellWindow), or null
     /// when it can: an item that cannot be traded or has a pose (<see cref="Bag.IsNoTrade"/>), a magic crystal stone that cannot be passed on, a
     /// vehicle or the ridden vehicle, or a tent.
@@ -48,7 +42,7 @@ public sealed class HomeShopHandlers(
     internal static string? SaleRefusal(ItemData items, GameSession session, BagItem stack) =>
         Bag.IsNoTrade(items, stack) ? "it cannot be traded"
             : stack.Insert is >= FirstNonTransferable and <= LastNonTransferable ? "its crystal stone cannot be passed on"
-                : session.Vehicle?.BagSlot == stack.Slot || items[stack.ItemId]?.Type == VehicleType ? "it is a vehicle"
+                : session.Vehicle?.BagSlot == stack.Slot || items[stack.ItemId]?.Type == Bag.VehicleType ? "it is a vehicle"
                     : items[stack.ItemId]?.Type == TentHandlers.TentItemType ? "it is a tent"
                         : null;
 

@@ -3,6 +3,9 @@ namespace NorthIsland.Server.Features.Stalls;
 /// <summary>Checks that a bag stack offered in a stall is still the one the stall opened with.</summary>
 public static class StallStock
 {
+    /// <summary>The item type of castle defence items (e.g. Gold Eagle Totem, Torch), which the item stall does not sell.</summary>
+    public const byte CastleDefenceType = 53;
+
     /// <summary>
     /// Gives the stack in a priced bag slot when it is still the stack the stall opened with: the same item with the same attributes, no more of
     /// them than are left on offer, and not the vehicle the seller rides. A stack swapped into the slot is not offered.
@@ -30,6 +33,24 @@ public static class StallStock
             : stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable
                 ? "its crystal stone cannot be passed on"
                 : null;
+
+    /// <summary>
+    /// Tells why a bag stack may not be sold in the item stall, by the client's rules (itemStallRefusal): it may not go to a buyer
+    /// (<see cref="Untransferable"/>), its item is unknown, it is a vehicle or a castle defence item, or it is an accessory, instrument or piece
+    /// of furniture larger than one cell (those go in the utensil stall).
+    /// </summary>
+    /// <param name="items">The item data, for the flags, types and sizes.</param>
+    /// <param name="stack">The bag stack.</param>
+    /// <returns>The reason for the log, or null when the stack may be sold in the item stall.</returns>
+    public static string? ItemStallRefusal(ItemData items, BagItem stack) =>
+        Untransferable(items, stack) is { } why ? why
+            : items[stack.ItemId] is not { } r ? "unknown item"
+                : r.Type == Bag.VehicleType ? "a vehicle cannot be sold in the item stall"
+                    : r.Type == CastleDefenceType ? "a castle defence item cannot be sold in the item stall"
+                        : r.Type is TentHandlers.AccessoryType or TentHandlers.InstrumentType or TentHandlers.FurnitureType
+                            && (r.CellWidth != 1 || r.CellHeight != 1)
+                            ? "a large item cannot be sold in the item stall"
+                            : null;
 
     /// <summary>
     /// Tells why a bag slot may not be priced in a stall that is opening: the slot is empty, its stack may not go to a buyer

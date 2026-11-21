@@ -47,7 +47,7 @@ public sealed class StallHandlers(
             var priced = character.Bag.Find(b => b.Slot == slot);
             if (price <= 0)
                 continue;
-            if (StallStock.OpenRefusal(items, session, priced, slot) is { } why)
+            if ((StallStock.OpenRefusal(items, session, priced, slot) ?? StallStock.ItemStallRefusal(items, priced!)) is { } why)
             {
                 logger.LogWarning("[{Session}] {Name}: bag slot {Slot} left out of the stall: {Why}", session.Id, character.Name, slot, why);
                 continue;
@@ -140,7 +140,7 @@ public sealed class StallHandlers(
                     var why = !priced || offered is null ? "not on offer"
                         : stack is null ? "no longer the stack the stall opened with"
                             : stack.ItemId != itemId || count == 0 || count > stack.Count ? "not that many of that item"
-                                : StallStock.Untransferable(items, stack) is { } untransferable ? untransferable
+                                : StallStock.ItemStallRefusal(items, stack) is { } unsellable ? unsellable
                                     : !StallView.Saw(session.Stalls.SeenItems, stall, slot, price) ? "not the price the buyer was shown"
                                         : null;
                     if (why is not null)
@@ -223,7 +223,7 @@ public sealed class StallHandlers(
         var shown = stall.Prices
             .Select(p => (Slot: p.Key, Price: p.Value,
                 Stack: stall.Offered.TryGetValue(p.Key, out var offered) ? StallStock.Find(seller, owner, p.Key, offered) : null))
-            .Where(x => x.Stack is not null && StallStock.Untransferable(items, x.Stack) is null)
+            .Where(x => x.Stack is not null && StallStock.ItemStallRefusal(items, x.Stack) is null)
             .ToList();
         session.Stalls.SeenItems = new StallView(stall, shown.ToDictionary(x => x.Slot, x => x.Price));
         session.Send(StallMessages.Items(ownerId, shown.Select(x => new StallItem(x.Slot, x.Stack!.ItemId, x.Stack.Count, x.Stack.Wear, x.Price)),

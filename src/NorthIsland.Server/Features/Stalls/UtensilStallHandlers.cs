@@ -33,13 +33,13 @@ public sealed class UtensilStallHandlers(
     }
 
     /// <summary>
-    /// Tells whether a bag stack may go into the stall: it takes more than one cell or is a vehicle (equip slot 7), and it may go to a buyer
-    /// (<see cref="StallStock.Untransferable"/>).
+    /// Tells whether a bag stack may go into the stall, by the client's rule (UtensilStallWindow::stallable): it takes more than one cell or is a
+    /// vehicle (<see cref="Bag.VehicleType"/>), and it may go to a buyer (<see cref="StallStock.Untransferable"/>).
     /// </summary>
     /// <param name="stack">The bag stack.</param>
     /// <returns>True when the stack can be offered.</returns>
     private bool Stallable(BagItem stack) =>
-        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.EquipSlot == 7)
+        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.Type == Bag.VehicleType)
             && StallStock.Untransferable(items, stack) is null;
 
     /// <summary>Opens a large item stall from the player's list of priced bag slots.</summary>
