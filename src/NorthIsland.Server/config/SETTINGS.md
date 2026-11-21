@@ -507,7 +507,7 @@ of 10,000, big bag weights out of 1,000):
 
 | Bag | Rows |
 |---|---|
-| Common, themed | a food (5, pizzas 2) and a Wishing Coin (1650 each, 33%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
+| Common, themed | a high-HP food ×5 and a high-SP food ×5 (900 each, 9%), Pizza ×2 (800, 8%) and Wishing Coins (700, 7%); 4 uncommons such as fireworks, scrolls, amity jellies, Delay Clocks (450 each, 18%); 3 rares such as the suit boxes, ears boxes, the mall's own boxes, Gold Amity Jelly, door vouchers, spars (150 each, 4.5%); one jackpot (15, 0.15%); the event's big bag (50, 0.5%) |
 | Common, fixed | Carnie Token ×3 (1000, 10%); Alchemy Book 1 (600, 6%), 2 (500, 5%), 3 (400, 4%) and 4 (300, 3%); the event's common forging scroll ×3 (400, 4%) and uncommon forging scroll ×2, Small Demon ×1 (250, 2.5%); the event's uncommon diamond (150, 1.5%); Strong Scroll and Pet Lethe Scroll (150 each, 1.5%); the event's rare forging scroll (100, 1%); the event's rare diamond (80, 0.8%); Seraph Scroll and the event's jackpot diamond (15 each, 0.15%); a Bronze Card (195, 1.95%), a Silver Card (75, 0.75%) and a Golden Card (5, 0.05%) |
 | Big, themed | 4 rares (115 each, 46%); 3 jackpots such as wings and robe boxes, saddles, Water Pack (Holy EXP potions), Transfer Mirror, Maid Box, Bomb Diamonds, Potential Pill (50 each, 15%); 2 top prizes: the mall weapon boxes, Friendship Brooch, Fairy's Spar, Yacht Voucher (12 each, 2.4%) |
 | Big, fixed | Strong Scroll ×3 and Pet Lethe Scroll ×2 (70 each, 7%); the event's rare forging scroll ×2 (60, 6%) and Seraph Scroll ×2 (30, 3%); the event's rare diamond (50, 5%), jackpot diamond (15, 1.5%) and top-prize diamond (3, 0.3%); a Silver Card (45, 4.5%), a Golden Card (20, 2%) and a Free Card (3, 0.3%) |
@@ -523,12 +523,34 @@ hours. Each event has one diamond of each rarity, and the events take turns thro
 | Jackpot (both bags) | Sanguine +34, Blove +36, Sky +38, Death +40 | Sanguine: Winter Festival, White Day, Summer, Thanksgiving; Blove: Chinese New Year, Spring Festival, Artisan Festival, Christmas; Sky: Valentine's Day, Anniversary, Mid-Autumn Festival, New Year; Death: Lantern Festival, Dragon Boat Festival, Halloween |
 | Top prize (big bag) | Fairy +42, Purple +44, Star +46 | Fairy: Winter Festival, Lantern Festival, Anniversary, Artisan Festival, Thanksgiving; Purple: Chinese New Year, White Day, Dragon Boat Festival, Mid-Autumn Festival, Christmas; Star: Valentine's Day, Spring Festival, Summer, Halloween, New Year |
 
+Every common bag's foods are a high-HP food (HP 800 or more, higher than its SP), a high-SP food (SP 600 or more,
+higher than its HP) and Pizza (Hawaii Pizza for Summer, Anniversary and Artisan Festival), which restores both. An event
+uses its own food when it has one that fits, and otherwise the events take turns through the strongest foods:
+
+| Event | High-HP food | High-SP food |
+|---|---|---|
+| Winter Festival | QQ Noodles (HP 1500) | Koryo Insam (SP 1200) |
+| Chinese New Year | Nian Congee (HP 800, SP 500) | Stomach Powder (SP 1200) |
+| Valentine's Day | Love Chocolate (HP 800, SP 400) | Gyrophora Chicken (SP 935) |
+| Lantern Festival | Yo BBQ Sauce (HP 1200) | Ginseng Thick Soup (SP 850) |
+| White Day | Passion Chocolate (HP 1200, SP 600) | Takoyaki (SP 700, HP 300) |
+| Spring Festival | Go Cole (HP 1000) | Ginseng Chicken (SP 650, HP 175) |
+| Anniversary | Soyseafood Rice (HP 900, SP 650) | Asiatic Wormwood (SP 600) |
+| Dragon Boat Festival | He Riceball (HP 1200, SP 600) | Koryo Insam (SP 1200) |
+| Summer | Hawaii Wine (HP 1000, SP 800) | Stomach Powder (SP 1200) |
+| Artisan Festival | He Riceball (HP 1200, SP 600) | Gyrophora Chicken (SP 935) |
+| Mid-Autumn Festival | Queen's Peach (HP 1000, SP 500) | Ginseng Thick Soup (SP 850) |
+| Halloween | QQ Noodles (HP 1500) | Takoyaki (SP 700, HP 300) |
+| Thanksgiving | Turkey (HP 800) | Ginseng Chicken (SP 650, HP 175) |
+| Christmas | Turkey (HP 800) | Asiatic Wormwood (SP 600) |
+| New Year | Soyseafood Rice (HP 900, SP 650) | Koryo Insam (SP 1200) |
+
 The forging scrolls work the same way: each event has one scroll of each rarity, and the Seraph Scroll (100%) is every
 event's jackpot scroll.
 
 No bag has two prizes of the same family in one tier, and no prize twice. A family is what the item does: every pet amity
-item (the Amity Jellies, Spring and Bless Jelly, Love Picnic Lunch, Love Bouquets: Item.dat effect 64), foods, fireworks,
-throwables (snowballs, Water Ball, Lantern Cannon), gems (diamonds and spars), Bomb Diamonds, forging scrolls, Wit Maid
+item (the Amity Jellies, Spring and Bless Jelly, Love Picnic Lunch, Love Bouquets: Item.dat effect 64), high-HP foods,
+high-SP foods, pizzas, fireworks, throwables (snowballs, Water Ball, Lantern Cannon), gems (diamonds and spars), Bomb Diamonds, forging scrolls, Wit Maid
 suits, ears boxes, wing boxes, weapon boxes, random gift boxes, door vouchers, gear combiners, saddles, outfits, hats,
 furniture, EXP items and hammers; anything else is its own family. The four Alchemy Books are the one exception (their
 chances were set on purpose), and the 2013 Big Turkey is a bag of food.
