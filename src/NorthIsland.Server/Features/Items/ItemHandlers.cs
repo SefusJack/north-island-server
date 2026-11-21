@@ -282,7 +282,7 @@ public sealed class ItemHandlers(
 
     /// <summary>
     /// Handles taking a piece off a pet into the bag, the wanted slot if it fits and otherwise a free one, unless the pet's gear is locked (see
-    /// <see cref="GearLocked"/>).
+    /// <see cref="GearLocked"/>) or the pet is a soldier (mercenary), as the client's petUnequipRefusal.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body: the pet slot, the equipment slot and the wanted bag slot.</param>
@@ -293,7 +293,7 @@ public sealed class ItemHandlers(
         var (petSlot, equipSlot, wanted) = (body.Span[0], body.Span[1], body.Span[2]);
         if (character.Pets.Find(p => p.Slot == petSlot) is not { } pet || pet.Equipment.Find(e => e.Slot == equipSlot) is not { } worn)
             return ValueTask.CompletedTask;
-        if (GearLocked(session, pet) is { } locked)
+        if ((GearLocked(session, pet) ?? (IsMercenary(pet) ? SoldierGear : null)) is { } locked)
         {
             logger.LogWarning("[{Session}] pet unequip: pet {Pet} (slot {PetSlot}) refused: {Why}", session.Id, pet.Name, petSlot, locked);
             return ValueTask.CompletedTask;
@@ -362,7 +362,7 @@ public sealed class ItemHandlers(
     /// <summary>The plasma weapons of the Elin pet and of the reborn Elin pet.</summary>
     private static readonly ushort[] ElinWeapons = [20044, 20045], RebornElinWeapons = [20048]; // 20044 Plasma Gun, 20045 and 20048 Plasma Wafer
 
-    /// <summary>The saddles, which pets of every direction kind may wear (the client's IsGetSaddleKind).</summary>
+    /// <summary>The saddles, which pets of every direction kind but 0 may wear whoever they are for (the client's IsGetSaddleKind).</summary>
     // 25208 Swift, 25214 Comfortable, 25535 Bash, 25536 Magic, 25539 Defence, 25625 Spirit, 25540 Decelerate, 25641 Tenacity
     private static readonly ushort[] Saddles = [25208, 25214, 25535, 25536, 25539, 25625, 25540, 25641];
 
@@ -403,9 +403,10 @@ public sealed class ItemHandlers(
         };
 
     /// <summary>
-    /// Tells why a pet may not wear an item (the client's petEquipRefusal): its level, who the item is for, the Elin pets' own weapons, a pet up for
-    /// sale in the stall or offered in a pet trade, a quest pet, a piece that is not equipment or one marked not for pets. The checks on the pet's
-    /// direction kind and on mercenary pets are left to the client: the NPC table does not read those fields yet.
+    /// Tells why a pet may not wear an item (the client's petEquipRefusal): its level, a soldier (mercenary) pet, who the item is for (gear usable
+    /// by 9 or 10 fits pets of direction kind 0, by 11 or 13 pets of direction kind 1, and a saddle any pet whose direction kind is not 0), the Elin
+    /// pets' own weapons, a pet up for sale in the stall or offered in a pet trade, a quest pet, a piece that is not equipment or one marked not
+    /// for pets. As in the client, a soldier pet may still put on gear made for its own NPC.
     /// </summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="item">The item.</param>
@@ -417,13 +418,17 @@ public sealed class ItemHandlers(
         {
             if (item.RequiredLevel > pet.Level)
                 return $"needs level {item.RequiredLevel}, the pet is level {pet.Level}";
+            if (IsMercenary(pet))
+                return SoldierGear;
+            var directionKind = npcs[pet.NpcId]?.DirectionKind ?? 0; // an unknown NPC counts as direction kind 0, as the client's empty record
             var fits = item.UsableBy switch
             {
                 0 or 8 => true, // any pet
-                9 or 10 or 11 or 13 => true, // pets of one direction kind: not known here
+                9 or 10 => directionKind == 0, // pets of direction kind 0
+                11 or 13 => directionKind == 1, // pets of direction kind 1
                 12 => pet.Element == WindElement,
-                _ => Saddles.Contains(item.Id) // not for pets, except a saddle
-            };
+                _ => false // not for pets
+            } || (Saddles.Contains(item.Id) && directionKind != 0);
             if (!fits)
                 return $"usable by {item.UsableBy}";
         }
@@ -440,6 +445,14 @@ public sealed class ItemHandlers(
             return pet.Tradable != 1 ? "a quest pet" : "not equipment";
         return (item.Flags & NorthIsland.GameData.Items.ItemRecord.NotForPetsFlag) != 0 ? "not for pets" : null;
     }
+
+    /// <summary>The refusal for the gear of a soldier (mercenary) pet, the client's own text.</summary>
+    private const string SoldierGear = "Soldiers equipment can't be changed";
+
+    /// <summary>Whether a pet is a soldier (mercenary), whose gear the client never lets change.</summary>
+    /// <param name="pet">The pet.</param>
+    /// <returns>True when the pet's NPC record is a mercenary.</returns>
+    private bool IsMercenary(Pet pet) => npcs[pet.NpcId] is { IsMercenary: true };
 
     /// <summary>
     /// Tells why a pet's gear may not change: the pet is up for sale in the owner's pet stall, or the owner offers it in an open pet trade, whose

@@ -19,6 +19,9 @@ public enum PetTransferBlock
     /// <summary>The pet is a grow kind or a reborn pet.</summary>
     Kind,
 
+    /// <summary>The pet is a soldier (mercenary).</summary>
+    Mercenary,
+
     /// <summary>The pet is marked as not tradable.</summary>
     Untradable,
 
@@ -51,15 +54,15 @@ public static class PetTransfer
     public const byte RebornType = 32; // npc type 32: reborn pet
 
     /// <summary>
-    /// Tells why a pet may not go to another player: it is no longer in the team, it is a grow kind or a reborn pet, it cannot be traded, it has
-    /// no amity, it is ridden, it is the fighting pet, it is priced in the owner's pet stall or offered in the owner's pet trade (except for the
-    /// way given), or it wears gear that cannot be traded.
+    /// Tells why a pet may not go to another player: it is no longer in the team, it is a grow kind or a reborn pet, it is a soldier (mercenary,
+    /// which the client never lets go), it cannot be traded, it has no amity, it is ridden, it is the fighting pet, it is priced in the owner's pet
+    /// stall or offered in the owner's pet trade (except for the way given), or it wears gear that cannot be traded.
     /// </summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="owner">The owner's character.</param>
     /// <param name="pet">The pet.</param>
     /// <param name="via">How the pet goes, whose own hold on the pet is not counted.</param>
-    /// <param name="npcs">The NPC data, for the pet's kind.</param>
+    /// <param name="npcs">The NPC data, for the pet's kind and whether it is a soldier.</param>
     /// <param name="items">The item data, for the flags of the gear the pet wears.</param>
     /// <returns>The reason and its text for the log, or null when the pet may go.</returns>
     public static (PetTransferBlock Block, string Why)? Refusal(
@@ -71,16 +74,17 @@ public static class PetTransfer
         ItemData items) =>
             !owner.Pets.Exists(p => ReferenceEquals(p, pet)) ? (PetTransferBlock.NotInTeam, "is no longer in the team")
                 : npcs[pet.NpcId] is { } npc && (npc.GrowKey != 0 || npc.Type == RebornType) ? (PetTransferBlock.Kind, "is a grow or reborn kind")
-                    : pet.Tradable == 0 ? (PetTransferBlock.Untradable, "cannot be traded")
-                        : pet.Amity == 0 ? (PetTransferBlock.NoAmity, "has no amity")
-                            : session.RidingPetSlot == pet.Slot ? (PetTransferBlock.Ridden, "is ridden")
-                                : owner.ActivePetId == pet.NpcId ? (PetTransferBlock.Fighting, "is the fighting pet")
-                                    : via != PetTransferVia.Stall && session.Stalls.Pets?.Prices.ContainsKey(pet.Slot) == true
-                                        ? (PetTransferBlock.InStall, "is in the pet stall")
-                                        : via != PetTransferVia.Trade && session.Trades.Pets is { Closed: false } trade
-                                            && ReferenceEquals(trade.Of(session).Pet, pet)
-                                            ? (PetTransferBlock.InTrade, "is offered in a pet trade")
-                                            : pet.Equipment.Exists(e => items[e.ItemId] is { } r && (r.Flags & Bag.NoTradeFlag) != 0)
-                                                ? (PetTransferBlock.NoTradeGear, "wears gear that cannot be traded")
-                                                : null;
+                    : npcs[pet.NpcId] is { IsMercenary: true } ? (PetTransferBlock.Mercenary, "is a soldier (mercenary)")
+                        : pet.Tradable == 0 ? (PetTransferBlock.Untradable, "cannot be traded")
+                            : pet.Amity == 0 ? (PetTransferBlock.NoAmity, "has no amity")
+                                : session.RidingPetSlot == pet.Slot ? (PetTransferBlock.Ridden, "is ridden")
+                                    : owner.ActivePetId == pet.NpcId ? (PetTransferBlock.Fighting, "is the fighting pet")
+                                        : via != PetTransferVia.Stall && session.Stalls.Pets?.Prices.ContainsKey(pet.Slot) == true
+                                            ? (PetTransferBlock.InStall, "is in the pet stall")
+                                            : via != PetTransferVia.Trade && session.Trades.Pets is { Closed: false } trade
+                                                && ReferenceEquals(trade.Of(session).Pet, pet)
+                                                ? (PetTransferBlock.InTrade, "is offered in a pet trade")
+                                                : pet.Equipment.Exists(e => items[e.ItemId] is { } r && (r.Flags & Bag.NoTradeFlag) != 0)
+                                                    ? (PetTransferBlock.NoTradeGear, "wears gear that cannot be traded")
+                                                    : null;
 }
