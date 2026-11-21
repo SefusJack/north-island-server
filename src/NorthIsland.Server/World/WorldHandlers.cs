@@ -1,8 +1,8 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NorthIsland.Protocol.IO;
+using NorthIsland.Protocol.Messages.Events;
 using NorthIsland.Protocol.Messages.Login;
 using NorthIsland.Protocol.Messages.World;
 using NorthIsland.Protocol.Opcodes;
@@ -22,7 +22,7 @@ namespace NorthIsland.Server.World;
 /// <param name="fields">The field encounters, started by walking.</param>
 /// <param name="gm">The GM commands, tried on every chat line.</param>
 /// <param name="maps">The map data, for the map sizes a walk must stay within.</param>
-/// <param name="travel">The teleport rule, for the return spot.</param>
+/// <param name="travel">The teleport rule, for the return spot's leave and arrival rules.</param>
 /// <param name="options">The world options.</param>
 /// <param name="travelOptions">The travel options, for the reach of one walk.</param>
 /// <param name="chatOptions">The chat limits.</param>
@@ -52,12 +52,6 @@ public sealed class WorldHandlers(
     /// </summary>
     public const ushort RadioSet = 34076, Loudspeaker = 34132, Transceiver = 39070; // 34076 Radio Set, 34132 Loudspeaker, 39070 Transceiver
 
-    /// <summary>The sub code of the <c>2/8</c> packet that tells the client its chat is blocked; it holds local chat for 8 seconds.</summary>
-    private const byte ChatBlockedSub = 8; // 2/8: chat blocked
-
-    /// <summary>The action code of the jump packet, which puts a player on a spot of their map (the client's Action07Jump).</summary>
-    private const byte JumpAction = 7; // server action 7: jump
-
     /// <summary>The warp to the starter's beach (map 11016).</summary>
     public static readonly DoorWarp StartersBeach = new(11016, 500, 1000, 0); // Beach
 
@@ -65,12 +59,17 @@ public sealed class WorldHandlers(
     public const ushort SouthIsland = 60002; // South Island
 
     /// <summary>The warp to Carnie (map 11094).</summary>
-    public static readonly DoorWarp Carnie = new(11094, 1141, 852, 0); // Carnie
+    public static readonly DoorWarp Carnie = new(CarnieReturn.Carnie, 1141, 852, 0); // Carnie, at its arrival spot
+
+    /// <summary>The chat pace of each session; changed only from the session's own packets, which the session gate runs one at a time.</summary>
+    private readonly ConditionalWeakTable<GameSession, ChatPace> _chatPace = new();
 
     /// <summary>
-    /// Handles the choice of a return spot (1 starter's beach, 2 the recorded spot, 3 Carnie) and warps the player there. Refused, as the
-    /// client refuses it (returnToSpot, chooseReturnSpot), when the teleport rule keeps the player on their map, in a team (the client leaves
-    /// it first), for Carnie from Carnie or the sea, and when the spot is on a map no teleport may reach.
+    /// Handles the choice of a return spot (1 starter's beach, 2 the recorded spot, 3 Carnie) and warps the player there. Refused by the
+    /// client's own rules for the return spot, not the full teleport rule (<see cref="TravelRules.ReturnRefusal"/>: a busy state, the Prison,
+    /// the Maze, a scene with flag 4, and for Carnie the maps the client keeps from it), in a team (the client leaves it first), with no spot
+    /// recorded, and when the spot is on a map no teleport may reach. A refusal is shown to the player as the client's notice that the
+    /// function is not available.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -87,13 +86,12 @@ public sealed class WorldHandlers(
             _ => null, // any other choice: no warp
         };
         var refusal = warp is null ? "not available"
-            : travel.LeaveRefusal(session, c)
-                ?? (world.Teams.LeaderOf(session.Account.LoginId) != 0 ? "in a team"
-                    : choice == 3 && (c.MapId == Carnie.MapId || travel.IsSea(c.MapId)) ? "Carnie cannot be reached from here"
-                        : travel.ArrivalRefusal(warp.MapId));
+            : travel.ReturnRefusal(session, c, toCarnie: choice == 3)
+                ?? (world.Teams.LeaderOf(session.Account.LoginId) != 0 ? "in a team" : travel.ArrivalRefusal(warp.MapId));
         if (refusal is not null)
         {
             logger.LogWarning("[{Session}] {Name}: return spot {Choice} refused: {Why}", session.Id, c.Name, choice, refusal);
+            session.Send(EventMessages.FunctionUnavailable());
             return ValueTask.CompletedTask;
         }
         world.ChangeMap(session, warp!);
@@ -136,14 +134,14 @@ public sealed class WorldHandlers(
         var refusal = session.Battle is not null ? "in a battle"
             : reach > 0 && (Math.Abs(walk.X - character.X) > reach || Math.Abs(walk.Y - character.Y) > reach)
                 ? $"farther than {reach} px from ({character.X}, {character.Y})"
-                : MapSizeOf(character.MapId) is { } size && (walk.X >= size.Width || walk.Y >= size.Height)
+                : maps.MapSize(character.MapId) is { } size && (walk.X >= size.Width || walk.Y >= size.Height)
                     ? $"outside the map ({size.Width} x {size.Height})"
                     : null;
         if (refusal is not null)
         {
             logger.LogWarning("[{Session}] {Name}: walk to ({X}, {Y}) on map {Map} refused: {Why}", session.Id, character.Name, walk.X, walk.Y,
                 character.MapId, refusal);
-            session.Send(new PacketWriter(JumpAction).I32(session.Account.LoginId).U16(character.MapId).U16(character.X).U16(character.Y).ToArray());
+            session.Send(WorldServerMessages.Jump(session.Account.LoginId, character.MapId, character.X, character.Y));
             return ValueTask.CompletedTask;
         }
 
@@ -155,14 +153,6 @@ public sealed class WorldHandlers(
             fields.OnWalk(session);
         return ValueTask.CompletedTask;
     }
-
-    /// <summary>The sizes of the maps walked on, by source map id, read once each (the map archive is read from disk).</summary>
-    private readonly ConcurrentDictionary<int, (int Width, int Height)?> _mapSizes = new();
-
-    /// <summary>Gives the size of a map, that of its scene for an instance copy.</summary>
-    /// <param name="mapId">The map id.</param>
-    /// <returns>Width and height in pixels, or null when unknown (a house, or no map archive).</returns>
-    private (int Width, int Height)? MapSizeOf(int mapId) => _mapSizes.GetOrAdd(maps.SourceMapId(mapId), maps.MapSize);
 
     /// <summary>
     /// Lets a world chat message out: a player must wear a radio (the Radio Set or the Loudspeaker), whose message costs SP, in a battle the
@@ -200,22 +190,6 @@ public sealed class WorldHandlers(
         return true;
     }
 
-    /// <summary>The chat lines a player sent in the current window, and until when they are silenced.</summary>
-    private sealed class ChatPace
-    {
-        /// <summary>When the current window began.</summary>
-        public DateTime WindowStartUtc { get; set; }
-
-        /// <summary>The lines sent in the current window.</summary>
-        public int Lines { get; set; }
-
-        /// <summary>Until when the player's lines are dropped.</summary>
-        public DateTime SilencedUntilUtc { get; set; }
-    }
-
-    /// <summary>The chat pace of each session; changed only from the session's own packets, which the session gate runs one at a time.</summary>
-    private readonly ConditionalWeakTable<GameSession, ChatPace> _chatPace = new();
-
     /// <summary>
     /// Counts a chat line against the player's limit: over <see cref="ChatOptions.BurstLines"/> lines in <see cref="ChatOptions.BurstSeconds"/>
     /// silences them for <see cref="ChatOptions.BlockSeconds"/> and tells the client its chat is blocked (2/8).
@@ -235,6 +209,7 @@ public sealed class WorldHandlers(
             logger.LogInformation("[{Session}] {Name}: chat line dropped, silenced until {Until:HH:mm:ss}", session.Id, c.Name, pace.SilencedUntilUtc);
             return false;
         }
+        // a window of at least 1 s: a setting of 0 or less would start a new window on every line and so never silence anyone
         if (now - pace.WindowStartUtc >= TimeSpan.FromSeconds(Math.Max(1, o.BurstSeconds)))
         {
             pace.WindowStartUtc = now;
@@ -244,16 +219,11 @@ public sealed class WorldHandlers(
         if (pace.Lines <= o.BurstLines)
             return true;
         pace.SilencedUntilUtc = now.AddSeconds(Math.Max(0, o.BlockSeconds));
-        session.Send(new PacketWriter(Action2.Code, ChatBlockedSub).ToArray());
+        session.Send(WorldServerMessages.ChatBlocked());
         logger.LogWarning("[{Session}] {Name}: more than {Lines} chat lines in {Seconds} s, silenced for {Block} s", session.Id, c.Name,
             o.BurstLines, o.BurstSeconds, o.BlockSeconds);
         return false;
     }
-
-    /// <summary>Tells whether a map is a Trojan War round map, where the client keeps a player in the war from local chat.</summary>
-    /// <param name="mapId">The map id.</param>
-    /// <returns>True for Trojan Round 1, 2 and 3.</returns>
-    private static bool IsTrojanWarMap(int mapId) => mapId is 10065 or 10066 or 10068; // Trojan Round 1, Trojan Round 2, Trojan Round 3
 
     /// <summary>
     /// Handles a chat packet: drops a line longer than the client can type or over the player's chat pace, tries the GM commands, then relays
@@ -293,7 +263,8 @@ public sealed class WorldHandlers(
                     break;
                 world.Chat(session, channel, sameMapOnly: false, chat.Text);
                 break;
-            case Action2.Local when castles.WarOn && IsTrojanWarMap(c.MapId): // 2/local on a Trojan War map during the war: not relayed
+            // 2/local during the war on a Trojan War round map (the castle maps among the Trojan rooms: Trojan Round 1, 2 and 3): not relayed
+            case Action2.Local when castles.WarOn && CastleRegistry.IsCastleMap(c.MapId) && CastleRegistry.IsTrojanRoom(c.MapId):
                 logger.LogInformation("[{Session}] {Name}: local chat refused on Trojan War map {Map}", session.Id, c.Name, c.MapId);
                 break;
             case Action2.Local: // 2/local: sent to the players on the same map
@@ -382,4 +353,17 @@ public sealed class WorldHandlers(
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
     internal static ValueTask Accept(GameSession session, ReadOnlyMemory<byte> body) => ValueTask.CompletedTask;
+
+    /// <summary>The chat lines a player sent in the current window, and until when they are silenced.</summary>
+    private sealed class ChatPace
+    {
+        /// <summary>When the current window began.</summary>
+        public DateTime WindowStartUtc { get; set; }
+
+        /// <summary>The lines sent in the current window.</summary>
+        public int Lines { get; set; }
+
+        /// <summary>Until when the player's lines are dropped.</summary>
+        public DateTime SilencedUntilUtc { get; set; }
+    }
 }
