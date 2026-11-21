@@ -89,6 +89,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `FervidityMessPercent` | The chance in percent that a Fervidity hit puts mess on a target it left standing |
 | `BuffSharePercent` | The percent of their pet's experience a player gets after buffing it |
 | `DefenceSaddleDivisor` | The divisor of the pet's defence the Defence and Spirit Saddles lend the rider |
+| `KnightSaddleSpeedPercent` | The percent of the mount's SPD a reborn Knight adds to what the mount's saddle lends (the Tenacity Saddle included); 0 turns the bonus off |
 | `FleeChancePercent` | The base chance in percent that a flee attempt succeeds |
 | `FleeSpeedWeight` | How strongly the speed lead changes the flee chance factor |
 | `FleeLevelStep` | How much each level above the enemies' average changes the flee chance factor |

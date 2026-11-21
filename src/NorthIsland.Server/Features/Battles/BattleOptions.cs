@@ -70,7 +70,7 @@ public sealed class BattleOptions
     public ComboOddsLevels ComboOddsLevels { get; set; }
 
     /// <summary>The levels a fighter counts per rebirth on top of its level for the combination odds.</summary>
-    public int ComboRebornLevelBonus { get; set; } = 99;
+    public int ComboRebornLevelBonus { get; set; } = 100;
 
     /// <summary>The percent added to the damage of every member of a combination; 0 is the plain sum.</summary>
     public int ComboDamageBonusPercent { get; set; }
@@ -217,7 +217,10 @@ public sealed class BattleOptions
     public double ExpMultiplierCap { get; set; } = 10;
 
     /// <summary>The divisor of the pet's defence the Defence and Spirit Saddles lend the rider.</summary>
-    public int DefenceSaddleDivisor { get; set; } = 3;
+    public int DefenceSaddleDivisor { get; set; } = 5;
+
+    /// <summary>The percent of the mount's SPD a reborn Knight adds to what the mount's saddle lends; 0 turns the bonus off.</summary>
+    public int KnightSaddleSpeedPercent { get; set; } = 15;
 
     /// <summary>A factor applied to the damage monsters do.</summary>
     public double MonsterDamageScale { get; set; } = 1;
