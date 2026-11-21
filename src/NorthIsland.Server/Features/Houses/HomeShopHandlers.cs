@@ -124,11 +124,6 @@ public sealed class HomeShopHandlers(
     private static byte[] DownPacket(int owner, Furniture f, StockItem s) =>
         new PacketWriter(Action62.Code, Action62.ShelfStop).I32(owner).U16(s.Id).U16(f.Index).ToArray();
 
-    /// <summary>Builds the packet <c>62/25</c> that refuses a request.</summary>
-    /// <param name="code">The refusal code.</param>
-    /// <returns>The packet.</returns>
-    private static byte[] Refuse(byte code) => new PacketWriter(Action62.Code, Action62.VendRefused).U8(code).ToArray();
-
     /// <summary>Handles <c>62/21</c> (shelf) and <c>62/24</c> (vending machine): the owner puts a bag stack up for sale at a unit price.</summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="body">The furniture index, item id, bag slot, count and unit price, and for a vending machine the row.</param>
@@ -163,7 +158,7 @@ public sealed class HomeShopHandlers(
         var id = FreeId(c, vending);
         if (pos == 0 || id == 0)
         {
-            session.Send(Refuse(vending ? (byte)7 : (byte)1)); // code
+            session.Send(VendRefusal.Packet(vending ? VendRefusal.MachineFull : VendRefusal.AtLimit));
             return ValueTask.CompletedTask;
         }
         var offer = new StockItem
@@ -249,7 +244,12 @@ public sealed class HomeShopHandlers(
             return ValueTask.CompletedTask;
         }
         using (held)
-            Buy(session, me, ownerSession, owner.Character, ownerId, id, count, itemId, price, vending);
+        {
+            if (owner.Character.MapId == me.MapId) // the owner may have left the house before their gate was free
+                Buy(session, me, ownerSession, owner.Character, ownerId, id, count, itemId, price, vending);
+            else
+                logger.LogWarning("[{Session}] {Name}: buy offer {Id} of {Owner} refused: the owner left the house", session.Id, me.Name, id, ownerId);
+        }
         return ValueTask.CompletedTask;
     }
 
@@ -282,7 +282,7 @@ public sealed class HomeShopHandlers(
             return;
         if (offer.Price != price)
         {
-            session.Send(Refuse(3)); // code
+            session.Send(VendRefusal.Packet(VendRefusal.PriceChanged));
             return;
         }
         var bag = oc.Bag.Find(b => b.Slot == offer.BagCell);
@@ -302,7 +302,7 @@ public sealed class HomeShopHandlers(
         var trial = Bag.Trial(me.Bag);
         if (Bag.Add(trial, items, bag.ItemId, count, bag.Wear).Sum(x => x.Added) != count)
         {
-            session.Send(Refuse(5)); // code
+            session.Send(VendRefusal.Packet(VendRefusal.Full));
             return;
         }
         me.Gold -= (int)total;

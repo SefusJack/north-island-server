@@ -165,6 +165,12 @@ public sealed class AtmHandlers(
         }
         using (held)
         {
+            if (!ReferenceEquals(target.ActiveCharacter, receiver)) // the receiver may have left the world before their gate was free
+            {
+                logger.LogWarning("[{Session}] {Name}: ATM transfer {Amount} to {Target} refused: the receiver left", session.Id, character.Name,
+                    amount, targetId);
+                return ValueTask.CompletedTask;
+            }
             if ((long)receiver.AtmGold + amount > AtmMessages.MaxBalance)
             {
                 session.Send(AtmMessages.Full());

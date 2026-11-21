@@ -83,14 +83,6 @@ public sealed class EggMachineHandlers(
     private List<(BagItem Item, byte Added)> Give(List<BagItem> bag, StockItem cell, int count) =>
         Bag.Add(bag, items, cell.ItemId, count, cell.Wear, cell.Insert, cell.Fusion, cell.Pose, cell.BoxItem, cell.Used, cell.Extra);
 
-    /// <summary>Builds the packet <c>62/25</c> that refuses a request.</summary>
-    /// <param name="code">
-    /// The refusal code, 1 to 7, which the client turns into a notice (FurnitureStalls::refuse): 1 furniture at its limit, 2 no egg in the
-    /// machine, 3 the price changed, 4 broken for a while, 5 full, 6 no space for the pet's bed, 7 full.
-    /// </param>
-    /// <returns>The packet.</returns>
-    private static byte[] Refuse(byte code) => new PacketWriter(Action62.Code, Action62.VendRefused).U8(code).ToArray();
-
     /// <summary>The sessions in the owner's house, including the owner.</summary>
     /// <param name="owner">The owner's character.</param>
     /// <param name="ownerSession">The owner's session.</param>
@@ -207,7 +199,7 @@ public sealed class EggMachineHandlers(
         {
             if (stack is not null && BagLocks.LockedBy(session, stack.Slot) is { } locked)
                 logger.LogWarning("[{Session}] {Name}: token egg from bag slot {Slot}: it is {Why}", session.Id, c.Name, stack.Slot, locked);
-            session.Send(Refuse(1)); // code 1: the client shows "The number of this furniture meets upper limit"
+            session.Send(VendRefusal.Packet(VendRefusal.AtLimit));
             return ValueTask.CompletedTask;
         }
         piece.Eggs++;
@@ -268,7 +260,12 @@ public sealed class EggMachineHandlers(
             return ValueTask.CompletedTask;
         }
         using (held)
-            Play(session, me, ownerSession, owner.Character, ownerId, furn, price);
+        {
+            if (owner.Character.MapId == me.MapId) // the owner may have left the house before their gate was free
+                Play(session, me, ownerSession, owner.Character, ownerId, furn, price);
+            else
+                logger.LogWarning("[{Session}] {Name}: play egg machine {Furn} of {Owner}: the owner left the house", session.Id, me.Name, furn, ownerId);
+        }
         return ValueTask.CompletedTask;
     }
 
@@ -289,12 +286,12 @@ public sealed class EggMachineHandlers(
         }
         if (piece.SalePrice != price)
         {
-            session.Send(Refuse(3)); // code 3: the client shows "The price has changed, cannot be used"
+            session.Send(VendRefusal.Packet(VendRefusal.PriceChanged));
             return;
         }
         if (piece.Eggs == 0 || piece.SalePrice <= 0)
         {
-            session.Send(Refuse(2)); // code 2: the client shows "There's no egg in it"
+            session.Send(VendRefusal.Packet(VendRefusal.NoEgg));
             return;
         }
         var filled = piece.Stock.Where(s => s.Count > 0).ToList();
@@ -307,7 +304,7 @@ public sealed class EggMachineHandlers(
         var pick = filled[GameRandom.Shared.Next(filled.Count)];
         if (Give(Bag.Trial(me.Bag), pick, 1).Sum(x => x.Added) != 1)
         {
-            session.Send(Refuse(5)); // code 5: the client shows "It's full" (no room in the bag)
+            session.Send(VendRefusal.Packet(VendRefusal.Full));
             return;
         }
         me.Gold -= price;
