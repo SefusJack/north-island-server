@@ -1,4 +1,5 @@
 using NorthIsland.GameData.Items;
+using NorthIsland.GameData.Npcs;
 using NorthIsland.GameData.Skills;
 
 namespace NorthIsland.Server.Features.Battles;
@@ -41,10 +42,50 @@ public static class NormalAttacks
         _ => 0, // any other weapon kind: no attack
     };
 
+    /// <summary>The Monster Attack a pet of direction kind 1 makes with weapon flag 0.</summary>
+    private const ushort MonsterAttackUnarmed = 10023; // 10023 Monster Attack
+
+    /// <summary>The Monster Attack a pet of direction kind 1 makes with weapon flag 1 or 2.</summary>
+    private const ushort MonsterAttackArmed = 10010; // 10010 Monster Attack
+
+    /// <summary>
+    /// The normal attack of a pet, as the client picks it (checkCanUseSkill for fighter kind 4): its fixed skill if it has one; otherwise, for
+    /// direction kind 1, 10023 Monster Attack with weapon flag 0 and 10010 Monster Attack with weapon flag 1 or 2, and for direction kinds 0 and 2
+    /// the pet's attack of the weapon it wears. The client keeps the id it was given for the other direction kinds (and for kind 1 with another
+    /// weapon flag, which no NPC has); the server gives those the weapon's attack too, so no pet chooses its own.
+    /// </summary>
+    /// <param name="npc">The pet's Npc.dat record, or null when it is unknown (then it counts as direction kind 0 without a fixed skill).</param>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count (bare hands then).</param>
+    /// <param name="equipment">The pet's worn items.</param>
+    /// <returns>The skill id of the attack, 0 when the weapon has none.</returns>
+    public static ushort OfPet(NpcRecord? npc, Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment)
+    {
+        if (npc is { FixedSkill: not 0 })
+            return npc.FixedSkill;
+        if (npc is { DirectionKind: 1 }) // direction kind 1: the attack is chosen by the pet's weapon flag
+        {
+            switch (npc.Weapon)
+            {
+                case 0: // weapon flag 0
+                    return MonsterAttackUnarmed;
+                case 1 or 2: // weapon flags 1 and 2
+                    return MonsterAttackArmed;
+            }
+        }
+        return WeaponAttack(WeaponKindOf(Worn(items, equipment)), pet: true);
+    }
+
     /// <summary>The normal attack of a player from the weapon they wear.</summary>
     /// <param name="items">Looks up an item record by id, or null when worn items do not count (bare hands then).</param>
     /// <param name="equipment">The player's worn items.</param>
     /// <returns>The skill id of the attack, 0 when the weapon has none.</returns>
     public static ushort OfPlayer(Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment) =>
-        WeaponAttack(WeaponKindOf(equipment.Find(e => e.Slot == Gems.WeaponSlot) is { } worn ? items?.Invoke(worn.ItemId) : null), pet: false);
+        WeaponAttack(WeaponKindOf(Worn(items, equipment)), pet: false);
+
+    /// <summary>The record of the weapon a player or pet wears.</summary>
+    /// <param name="items">Looks up an item record by id, or null when worn items do not count.</param>
+    /// <param name="equipment">The worn items.</param>
+    /// <returns>The weapon's record, or null for bare hands, an unknown item or when worn items do not count.</returns>
+    private static ItemRecord? Worn(Func<ushort, ItemRecord?>? items, List<EquippedItem> equipment) =>
+        equipment.Find(e => e.Slot == Gems.WeaponSlot) is { } worn ? items?.Invoke(worn.ItemId) : null;
 }
