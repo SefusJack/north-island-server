@@ -450,8 +450,8 @@ public sealed class GobangHandlers(
 
     /// <summary>
     /// Adds gold to a character, up to the most a player can hold, and sends the new amount when they are online with that character. An online
-    /// player is paid under their session gate: at once when the caller holds it or it is free; otherwise (it is held, maybe by a packet of theirs
-    /// that waits for <see cref="_lock"/>, which the caller holds) from a task that holds no gate and waits for it, so the payout is never lost.
+    /// player is paid under their session gate (<see cref="GameSession.HandOver"/>): at once when the caller holds it or it is free; otherwise
+    /// before their next packet or their final save, never waiting here, as the caller holds <see cref="_lock"/>.
     /// </summary>
     /// <param name="id">The player's login id.</param>
     /// <param name="c">The character that gets the gold.</param>
@@ -460,39 +460,10 @@ public sealed class GobangHandlers(
     /// <param name="why">What the gold is for, for the log.</param>
     private void Pay(int id, Character c, int amount, GameSession? holder, string why)
     {
-        var s = world.SessionOf(id) is { } online && ReferenceEquals(online.ActiveCharacter, c) ? online : null;
-        if (s is null || ReferenceEquals(s, holder))
-        {
-            Credit(s, c, amount, why);
-            return;
-        }
-        if (s.TryExclusive(out var held)) // never wait here: the caller holds _lock
-        {
-            using (held)
-                Credit(s, c, amount, why);
-            return;
-        }
-        _ = PayLaterAsync(s, c, amount, why);
-    }
-
-    /// <summary>Pays a player from a task that holds no gate, once their session's gate is free.</summary>
-    /// <param name="s">The player's session.</param>
-    /// <param name="c">The character that gets the gold.</param>
-    /// <param name="amount">The gold to add.</param>
-    /// <param name="why">What the gold is for, for the log.</param>
-    /// <returns>A task that completes when the gold is paid.</returns>
-    private async Task PayLaterAsync(GameSession s, Character c, int amount, string why)
-    {
-        try
-        {
-            await Task.Yield(); // off the caller's thread, which holds _lock and a gate
-            using (await s.ExclusiveAsync().ConfigureAwait(false))
-                Credit(s, c, amount, why);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Five in a row: paying {Amount} gold to {Name} failed", amount, c.Name);
-        }
+        if (world.SessionOf(id) is { } s && ReferenceEquals(s.ActiveCharacter, c))
+            s.HandOver(holder, $"five in a row: {amount} gold", () => Credit(s, c, amount, why));
+        else
+            Credit(null, c, amount, why);
     }
 
     /// <summary>Adds the gold, up to the most a player can hold, tells the player when they are online and logs it.</summary>

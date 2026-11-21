@@ -479,11 +479,16 @@ public sealed class MarriageHandlers(
             foreach (var pid in new[] { g, b })
                 if (_applications.TryGetValue(pid, out var asked))
                     Cancel(asked, pid, divorce: false);
-            await Task.Yield(); // off the thread of the packet that started the ceremony, which holds its gate when every step delay is 0
             foreach (var (s, c) in new[] { (groom, gc), (bride, bc) })
             {
+                // the wait is asynchronous, so a packet that started the ceremony and holds its gate goes on and lets it go
                 using (await s.ExclusiveAsync().ConfigureAwait(false)) // this task holds no other gate; the flags change between the spouse's packets
                 {
+                    if (s.Closing) // the character is saved for the last time (or about to be) and must not change any more
+                    {
+                        logger.LogWarning("[{Session}] {Name}: the wedding flags are not set, the connection ended", s.Id, c.Name);
+                        continue;
+                    }
                     marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: false);
                     marks.TrySetFlag(s, c, MarriageRegistry.MarriedFlag, on: true);
                     SendCard(s, couple);
