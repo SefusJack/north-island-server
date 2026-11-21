@@ -333,8 +333,7 @@ public sealed partial class LoginHandlers(
             if (MayLog(session))
                 logger.LogInformation("[{Session}] {Name} logged in again, kicking session {Previous}", session.Id, account.Name, previous.Id);
             previous.Send(ServerMessages.Kick(KickReason.RepeatedLogin));
-            previous.Close();
-            world.Leave(previous);
+            world.Disconnect(session, previous);
         }
     }
 

@@ -40,7 +40,7 @@ public sealed partial class BattleHandlers
 
     /// <summary>
     /// Drops the join a player who leaves the game waits with, takes them out of their battle, and plays the round if they were the last one it
-    /// waited for.
+    /// waited for. Runs from <see cref="WorldState.Leave"/>, whose caller holds the player's gate.
     /// </summary>
     /// <param name="session">The session of the player who leaves.</param>
     private void OnLeavingWorld(GameSession session)
@@ -57,8 +57,8 @@ public sealed partial class BattleHandlers
         lock (battle.Lock)
         {
             logger.LogInformation("[{Session}] {Name} leaves the game in battle {Index}", session.Id, player.Name, battle.EventBattleIndex);
-            // the disconnect cleanup holds the player's gate once it began (CleaningUp); a kick from another player's packet does not
-            if (LeaveWithTeam(session, battle, player, "left the game", fled: false, holder: session.CleaningUp ? session : null))
+            // world.Leave runs under the player's gate: the disconnect cleanup's, or the kicker's (WorldState.Disconnect)
+            if (LeaveWithTeam(session, battle, player, "left the game", fled: false, holder: session))
                 return;
             if (battle.Phase == BattlePhase.Command && !battle.AwaitsCommands && battle.ActivePlayers.FirstOrDefault()?.Session is { } other)
             {

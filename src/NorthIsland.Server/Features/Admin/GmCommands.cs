@@ -120,7 +120,7 @@ public sealed class GmCommands(
         {
             "op" => await SetGmAsync(session, args, on: true).ConfigureAwait(false), // /op: makes an account a GM
             "deop" => await SetGmAsync(session, args, on: false).ConfigureAwait(false), // /deop: takes GM away from an account
-            "kick" => Kick(args), // /kick: disconnects an online player
+            "kick" => Kick(session, args), // /kick: disconnects an online player
             "ban" => Ban(session, args, address: false), // /ban: bans the account
             "ban-ip" => Ban(session, args, address: true), // /ban-ip: bans the account and the address
             "unban" => Unban(args), // /unban: lifts the bans of a name or address
@@ -186,26 +186,29 @@ public sealed class GmCommands(
     }
 
     /// <summary>Handles <c>/kick</c>: disconnects an online player.</summary>
+    /// <param name="session">The GM's session.</param>
     /// <param name="args">The command arguments: the name.</param>
     /// <returns>The reply line.</returns>
-    private string Kick(string[] args)
+    private string Kick(GameSession session, string[] args)
     {
         if (args.Length != 1)
             return "Usage: /kick <name>";
         if (Online(args[0]) is not { } target)
             return $"{args[0]} is not online.";
-        Disconnect(target);
+        Disconnect(session, target);
         return $"{args[0]} was kicked.";
     }
 
-    /// <summary>Tells a player's client it is disconnected and closes the connection.</summary>
+    /// <summary>
+    /// Tells a player's client it is disconnected, closes the connection and takes the player out of the world (<see cref="WorldState.Disconnect"/>).
+    /// </summary>
+    /// <param name="session">The GM's session, whose gate the command holds.</param>
     /// <param name="target">The player's session.</param>
-    private void Disconnect(GameSession target)
+    private void Disconnect(GameSession session, GameSession target)
     {
         logger.LogInformation("[{Session}] {Name} is kicked by a GM", target.Id, target.ActiveCharacter?.Name);
         target.Send(ServerMessages.Kick(KickReason.Disconnected));
-        target.Close();
-        world.Leave(target);
+        world.Disconnect(session, target);
     }
 
     /// <summary>
@@ -240,7 +243,7 @@ public sealed class GmCommands(
         if (ip is not null)
             added |= bans.BanAddress(ip, account.Name, by);
         foreach (var target in connected)
-            Disconnect(target);
+            Disconnect(session, target);
         return !added ? $"{args[0]} was already banned."
             : ip is null ? $"{args[0]} (account {account.Name}) is banned."
                 : $"{args[0]} (account {account.Name}, {BanList.Normal(ip)}) is banned.";

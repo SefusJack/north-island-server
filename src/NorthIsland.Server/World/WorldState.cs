@@ -134,10 +134,34 @@ public sealed class WorldState(
     }
 
     /// <summary>
+    /// Closes another player's connection (a kick by a GM or by a later login of the account) and takes them out of the world at once, under
+    /// their gate, so that a later login of the account may enter the world straight away. The gate is taken before the close, as <see
+    /// cref="GameSession.TryExclusiveFrom"/> refuses a closing session; when it cannot be had (the player's work holds it, or their connection
+    /// already ended) the connection is only closed, and the disconnect cleanup takes them out of the world under their gate before the final save.
+    /// </summary>
+    /// <param name="holder">The session whose gate the caller holds (the GM's or the new login's); may be <paramref name="target"/>.</param>
+    /// <param name="target">The session to close; the caller sent it the kick packet.</param>
+    public void Disconnect(GameSession holder, GameSession target)
+    {
+        if (!target.TryExclusiveFrom(holder, out var held))
+        {
+            logger.LogInformation("[{Session}] closed; its disconnect cleanup takes it out of the world", target.Id);
+            target.Close();
+            return;
+        }
+        using (held)
+        {
+            target.Close();
+            Leave(target);
+        }
+    }
+
+    /// <summary>
     /// Takes a player out of the online world: ends their battle, auto collecting, fishing and team, banks their online
     /// time and tells everyone. For a session that is not the one online under its player id (not yet in the world, or
     /// already left) and not in a battle it only drops what the session itself holds; a session that lost its account is
-    /// only removed.
+    /// only removed. The caller holds the session's gate (<see cref="GameSession.ExclusiveAsync"/>): the disconnect
+    /// cleanup, or <see cref="Disconnect"/>; the <see cref="Leaving"/> handlers change the player's state under it.
     /// </summary>
     /// <param name="session">The player's session.</param>
     public void Leave(GameSession session)
@@ -435,7 +459,9 @@ public sealed class WorldState(
     /// <summary>Called once a player's client has loaded a map.</summary>
     public Action<GameSession>? Arrived { get; set; }
 
-    /// <summary>Called when a player leaves the world, before their state is cleaned up.</summary>
+    /// <summary>
+    /// Called when a player leaves the world, before their state is cleaned up; the caller holds the player's gate (<see cref="Leave"/>).
+    /// </summary>
     public Action<GameSession>? Leaving { get; set; }
 
     /// <summary>Raised when an attribute packet about the player themself is sent, with the attribute id, its value and a second value.</summary>
