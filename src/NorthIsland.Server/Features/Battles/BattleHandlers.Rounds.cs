@@ -177,7 +177,10 @@ public sealed partial class BattleHandlers
         }
     }
 
-    /// <summary>Opens the command phase of a new round, or plays it at once when nobody on the player's side can act.</summary>
+    /// <summary>
+    /// Opens the command phase of a new round and joins the players whose join waits for it, or plays the round at once when nobody on the
+    /// player's side can act.
+    /// </summary>
     /// <param name="session">The session used for logging and for ending the battle.</param>
     /// <param name="battle">The battle.</param>
     private void StartRound(GameSession session, Battle battle)
@@ -205,6 +208,7 @@ public sealed partial class BattleHandlers
             _ = PlayRoundAsync(session, battle, new Dictionary<Fighter, BattleCommand>());
             return;
         }
+        JoinWaiting(battle);
         _ = DeadlineAsync(session, battle, round);
     }
 

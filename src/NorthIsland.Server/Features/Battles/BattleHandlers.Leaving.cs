@@ -36,10 +36,14 @@ public sealed partial class BattleHandlers
         return battle.IsPvp && TryFinish(session, battle);
     }
 
-    /// <summary>Takes a player out of their battle when they leave the game, and plays the round if they were the last one it waited for.</summary>
+    /// <summary>
+    /// Drops the join a player who leaves the game waits with, takes them out of their battle, and plays the round if they were the last one it
+    /// waited for.
+    /// </summary>
     /// <param name="session">The session of the player who leaves.</param>
     private void OnLeavingWorld(GameSession session)
     {
+        _waitingJoins.TryRemove(session, out _);
         if (session.Battle is not { } battle)
             return;
         var player = battle.Players.Find(p => ReferenceEquals(p.Session, session) && !p.Left);
@@ -135,7 +139,7 @@ public sealed partial class BattleHandlers
 
     /// <summary>
     /// Settles a battle its caller marked over with <see cref="TryClaimEnd"/>: gives out the drops, takes every player out, stops the
-    /// watchers and handles the monster that started it.
+    /// watchers, answers the joins that wait for it and handles the monster that started it.
     /// </summary>
     /// <param name="session">The session used for logging.</param>
     /// <param name="battle">The battle.</param>
@@ -158,6 +162,7 @@ public sealed partial class BattleHandlers
             watchers = [.. battle.Watchers];
         foreach (var w in watchers)
             StopWatching(w, battle);
+        DropWaitingJoins(battle);
         MonsterAfterBattle(battle, outcome, fled);
         logger.LogInformation("[{Session}] battle {Index} over: {How} ({Outcome}) after {Rounds} round(s)", session.Id,
             battle.EventBattleIndex, how, outcome, battle.Round);

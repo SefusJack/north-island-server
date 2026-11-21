@@ -566,6 +566,7 @@ public sealed class Battle
             CriticalPercent = WornCritical(items, pet.Equipment),
             HalvesTargetSp = WornPestle(items, pet.Equipment),
             Npc = npcs(pet.NpcId),
+            NormalAttackId = NormalAttacks.OfPet(npcs(pet.NpcId), items, pet.Equipment), // its counters before its first attack
             OwnedPet = pet,
             Session = session,
         };
