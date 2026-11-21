@@ -93,14 +93,15 @@ public sealed class FurMailHandlers(
             .FirstOrDefault(x => string.Equals(x.Character.Name, GmTag.Strip(name), StringComparison.OrdinalIgnoreCase) && x.Account.LoginId != myId);
         if (target.Character is null || text.Length == 0)
         {
-            session.Send(FurMailMessages.Result(1));
+            session.Send(FurMailMessages.Result(1)); // result 1 (FurMailWindow.cpp): "player doesn't exist", the client puts the text back
             return;
         }
-        if (text.Length > MaxText || !FriendHandlers.TakeMailTurn(session))
+        // the wait is only checked here; the turn is taken once the letter is accepted, so a busy target can be tried again at once
+        if (text.Length > MaxText || GameClock.UtcNow - session.Friends.LastMailUtc < FriendHandlers.MailWait)
         {
             logger.LogWarning("[{Session}] {Name}: letter to {Target} refused ({Length} characters, or too soon)", session.Id, c.Name, name,
                 text.Length);
-            session.Send(FurMailMessages.Result(1));
+            session.Send(FurMailMessages.Result(1)); // result 1 (FurMailWindow.cpp): "player doesn't exist", the client puts the text back
             return;
         }
         var targetId = target.Account.LoginId;
@@ -115,12 +116,13 @@ public sealed class FurMailHandlers(
             {
                 logger.LogWarning("[{Session}] {Name}: letter to {Target} refused, the target's account was logging in or out", session.Id, c.Name,
                     target.Character.Name);
-                session.Send(FurMailMessages.Result(1));
+                session.Send(FurMailMessages.Result(1)); // result 1 (FurMailWindow.cpp): "player doesn't exist", the client puts the text back
                 return;
             }
         }
         if (live is not null && !await PostLiveAsync(session, c, live, target.Account, target.Character, letter).ConfigureAwait(false))
             return;
+        _ = FriendHandlers.TakeMailTurn(session); // the wait was checked above and the sender's gate is held, so this starts the next wait
         session.Send(FurMailMessages.Result(3)); // result
         logger.LogInformation("[{Session}] {Name} leaves a letter in {Target}'s mailbox: {Text}", session.Id, c.Name, target.Character.Name, text);
     }
@@ -131,7 +133,7 @@ public sealed class FurMailHandlers(
         /// <summary>The letter is in the box.</summary>
         InBox,
 
-        /// <summary>The target blocks the sender or the box is full; the sender was told.</summary>
+        /// <summary>The target blocks the sender, the box is full or the save failed; the sender was told.</summary>
         Refused,
 
         /// <summary>The target's account has a live session now, whose gate holds the box; nothing was posted.</summary>
@@ -165,7 +167,7 @@ public sealed class FurMailHandlers(
         {
             logger.LogWarning("[{Session}] {Name}: letter to {Target} refused, the target's session is busy or its connection ended", session.Id,
                 c.Name, target.Name);
-            session.Send(FurMailMessages.Result(1));
+            session.Send(FurMailMessages.Result(1)); // result 1 (FurMailWindow.cpp): "player doesn't exist", the client puts the text back
             return false;
         }
         using (held)
@@ -180,10 +182,8 @@ public sealed class FurMailHandlers(
                 live.Send(FurMailMessages.Letter(letter.SenderId, letter.SenderName, letter.Time, letter.Text));
                 return true;
             }
-            if (TryPost(session, target, letter, offlineId: null) != Post.InBox)
-                return false;
-            await SaveBoxAsync(session, account).ConfigureAwait(false);
-            return true;
+            return TryPost(session, target, letter, offlineId: null) == Post.InBox
+                && await SaveBoxAsync(session, account, target, letter).ConfigureAwait(false);
         }
     }
 
@@ -202,8 +202,8 @@ public sealed class FurMailHandlers(
         try
         {
             var posted = TryPost(session, target, letter, account.LoginId);
-            if (posted == Post.InBox)
-                await SaveBoxAsync(session, account).ConfigureAwait(false);
+            if (posted == Post.InBox && !await SaveBoxAsync(session, account, target, letter).ConfigureAwait(false))
+                return Post.Refused; // taken back out of the box; the sender was told
             return posted;
         }
         finally
@@ -213,22 +213,36 @@ public sealed class FurMailHandlers(
     }
 
     /// <summary>
-    /// Saves an account after a letter went into one of its boxes. The letter stays in the box when the save fails (a login of the account may
-    /// change it while it is written), and the account's next save writes it, so the failure is logged and the letter still counts as sent.
+    /// Saves an account after a letter went into one of its boxes. When the save fails (a login of the account may change it while it is
+    /// written) the letter is taken back out and the sender told, so that a retry does not post it twice; a letter that a login already took
+    /// out of the box (SendOnLogin) was delivered and counts as sent.
     /// </summary>
     /// <param name="session">The sender's session.</param>
     /// <param name="account">The target's account.</param>
-    /// <returns>A task that completes when the save is done or failed.</returns>
-    private async Task SaveBoxAsync(GameSession session, Account account)
+    /// <param name="target">The character whose box holds the letter.</param>
+    /// <param name="letter">The letter just posted.</param>
+    /// <returns>True when the letter counts as sent; false when it was taken back and the sender was told.</returns>
+    private async ValueTask<bool> SaveBoxAsync(GameSession session, Account account, Character target, FurMail letter)
     {
         try
         {
             await store.SaveAsync(account).ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[{Session}] saving {Account} after a letter failed; the letter waits in the box for the account's next save",
-                session.Id, account.Name);
+            int taken;
+            lock (target.FurMails) // the character's login may be taking the letters out (SendOnLogin)
+                taken = target.FurMails.RemoveAll(m => ReferenceEquals(m, letter));
+            if (taken == 0)
+            {
+                logger.LogWarning(ex, "[{Session}] saving {Account} after a letter failed; a login already took the letter", session.Id,
+                    account.Name);
+                return true;
+            }
+            logger.LogWarning(ex, "[{Session}] saving {Account} after a letter failed; the letter is taken back", session.Id, account.Name);
+            session.Send(FurMailMessages.Result(1)); // result 1 (FurMailWindow.cpp): "player doesn't exist", the client puts the text back
+            return false;
         }
     }
 
