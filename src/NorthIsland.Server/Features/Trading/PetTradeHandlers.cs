@@ -265,20 +265,6 @@ public sealed class PetTradeHandlers(
             Pets.Exile(session, c, pet, world, combat);
     }
 
-    /// <summary>
-    /// Takes a pet away from a character for callers that have no combat stats at hand, by <see cref="Pets.Remove"/>; it does not resend the
-    /// combat stats when the player gets off the pet. Kept for the callers outside the trade; new code calls <see cref="Pets.Exile"/>.
-    /// </summary>
-    /// <param name="world">The online sessions.</param>
-    /// <param name="session">The player's session.</param>
-    /// <param name="c">The character.</param>
-    /// <param name="pet">The pet to remove, or null for none.</param>
-    internal static void Give(WorldState world, GameSession session, Character c, Pet? pet)
-    {
-        if (pet is not null)
-            Pets.Remove(session, c, pet, world);
-    }
-
     /// <summary>Gives a pet to a character: puts it in a free slot and tells the client.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The character.</param>
