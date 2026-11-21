@@ -98,9 +98,11 @@ public sealed class MaidHandlers(
     {
         var (choice, bagSlot) = body.Length >= 3 ? (body[1], body[2]) : ((byte)255, (byte)0);
         if (!ReferenceEquals(owner.Character, c) || !Costumes.TryGetValue(choice, out var costume)
-            || c.Bag.Find(b => b.Slot == bagSlot) is not { } suit || suit.ItemId != costume.Suit || piece.ItemId == costume.Maid)
+            || c.Bag.Find(b => b.Slot == bagSlot) is not { } suit || suit.ItemId != costume.Suit || piece.ItemId == costume.Maid
+            || BagLocks.IsLocked(session, bagSlot))
         {
-            logger.LogWarning("[{Session}] {Name}: maid {Furn} costume {Choice} from bag slot {Slot}: refused", session.Id, c.Name, piece.Index, choice, bagSlot);
+            logger.LogWarning("[{Session}] {Name}: maid {Furn} costume {Choice} from bag slot {Slot}: refused ({Why})", session.Id, c.Name,
+                piece.Index, choice, bagSlot, BagLocks.LockedBy(session, bagSlot) ?? "not the owner, no such costume or suit, or already worn");
             session.Send(new PacketWriter(Action76.Code, Action76.Hide).ToArray());
             return;
         }

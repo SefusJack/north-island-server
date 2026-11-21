@@ -126,9 +126,10 @@ public sealed class TentHandlers(
         var (style, slot, set) = (body.Span[0], body.Span[1], body.Span[2]);
         var stack = character.Bag.Find(b => b.Slot == slot);
         if (character.Tent is not { } tent || stack is null || !Palettes.TryGetValue(stack.ItemId, out var palette)
-            || palette.Set != set || style < 1 || style > palette.Styles)
+            || palette.Set != set || style < 1 || style > palette.Styles || BagLocks.IsLocked(session, slot))
         {
-            logger.LogWarning("[{Session}] {Name}: tent style {Style} from bag slot {Slot} refused", session.Id, character.Name, style, slot);
+            logger.LogWarning("[{Session}] {Name}: tent style {Style} from bag slot {Slot} refused ({Why})", session.Id, character.Name, style, slot,
+                BagLocks.LockedBy(session, slot) ?? "no tent, palette or style");
             return ValueTask.CompletedTask;
         }
         (tent.Kind1, tent.Kind2) = set == 1 ? (style, (byte)0) : ((byte)0, style);
@@ -597,9 +598,10 @@ public sealed class TentHandlers(
         var (slot, count, binIndex) = (r.U8(), r.U8(), r.U16());
         var bin = character.Furniture.Find(f => f.Index == binIndex && f.ItemId is RecyclingBin or 38059); // Kitty Recycling Bin
         var stack = character.Bag.Find(b => b.Slot == slot);
-        if (bin is null || stack is null || stack.ItemId == character.Tent?.ItemId || session.Vehicle?.BagSlot == slot)
+        if (bin is null || stack is null || stack.ItemId == character.Tent?.ItemId || BagLocks.IsLocked(session, slot))
         {
-            logger.LogWarning("[{Session}] {Name}: recycle bag slot {Slot} at furniture {Bin}: refused", session.Id, character.Name, slot, binIndex);
+            logger.LogWarning("[{Session}] {Name}: recycle bag slot {Slot} at furniture {Bin}: refused ({Why})", session.Id, character.Name, slot,
+                binIndex, BagLocks.LockedBy(session, slot) ?? "no bin, an empty slot or the pitched tent");
             return ValueTask.CompletedTask;
         }
         var taken = count == 0 || count > stack.Count ? stack.Count : count;
@@ -686,8 +688,8 @@ public sealed class TentHandlers(
     }
 
     /// <summary>
-    /// Takes one item out of a bag stack to be placed as furniture or a tool; an item of the wrong kind, the ridden vehicle and a full house are
-    /// refused.
+    /// Takes one item out of a bag stack to be placed as furniture or a tool; an item of the wrong kind, a locked bag slot (<see cref="BagLocks"/>:
+    /// in a trade, a stall, a house shelf, the pet express or the ridden vehicle) and a full house are refused.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The player's active character.</param>
@@ -698,9 +700,14 @@ public sealed class TentHandlers(
     private ushort? TakeOne(GameSession session, Character character, byte slot, Func<ItemRecord?, bool> fits, string what)
     {
         var stack = character.Bag.Find(b => b.Slot == slot);
-        if (stack is null || !fits(items[stack.ItemId]) || character.Furniture.Count >= Furniture.MaxPieces || session.Vehicle?.BagSlot == slot)
+        var why = stack is null ? "it is empty"
+            : !fits(items[stack.ItemId]) ? "the item is of the wrong kind"
+                : character.Furniture.Count >= Furniture.MaxPieces ? "the house is full"
+                    : BagLocks.LockedBy(session, slot) is { } locked ? $"it is {locked}"
+                        : null;
+        if (stack is null || why is not null)
         {
-            logger.LogWarning("[{Session}] {Name}: {What}: bag slot {Slot} cannot be used", session.Id, character.Name, what, slot);
+            logger.LogWarning("[{Session}] {Name}: {What}: bag slot {Slot} cannot be used: {Why}", session.Id, character.Name, what, slot, why);
             return null;
         }
         stack.Count--;

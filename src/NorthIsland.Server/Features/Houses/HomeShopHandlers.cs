@@ -30,7 +30,10 @@ public sealed class HomeShopHandlers(
     /// <summary>The item ids of the first and last magic crystal stones that cannot be passed on with the item they are set into.</summary>
     public const ushort FirstNonTransferable = 61063, LastNonTransferable = 61078; // 61063 Morning Star Crystal, 61078 Charm Crystal
 
-    /// <summary>The item type of vehicles, whose capsules cannot be sold or stored.</summary>
+    /// <summary>
+    /// The item type of vehicles, whose capsules cannot be sold or stored; the same type the bag keeps from stacking (Bag.VehicleType, private
+    /// there).
+    /// </summary>
     public const byte VehicleType = 39;
 
     /// <summary>
@@ -49,13 +52,31 @@ public sealed class HomeShopHandlers(
                     : items[stack.ItemId]?.Type == TentHandlers.TentItemType ? "it is a tent"
                         : null;
 
-    /// <summary>Whether a bag stack is still the stack an offer was made from: the same item with every attribute the same.</summary>
+    /// <summary>
+    /// Whether a bag stack is still the stack an offer was made from: the same item with every attribute the same, by the bag's own rule
+    /// (<see cref="GridStore.Same"/>).
+    /// </summary>
     /// <param name="bag">The bag stack.</param>
     /// <param name="offer">The offer.</param>
     /// <returns>True when they match.</returns>
-    private static bool Matches(BagItem bag, StockItem offer) =>
-        bag.ItemId == offer.ItemId && bag.Wear == offer.Wear && bag.Insert == offer.Insert && bag.Fusion == offer.Fusion && bag.Pose == offer.Pose
-            && bag.BoxItem == offer.BoxItem && bag.Used == offer.Used && bag.Extra == offer.Extra;
+    private static bool Matches(BagItem bag, StockItem offer) => GridStore.Same(bag, StackOf(offer));
+
+    /// <summary>Makes a bag stack with the slot, item, count and attributes of an offer, to compare it with the bag stack it was made from.</summary>
+    /// <param name="offer">The offer.</param>
+    /// <returns>The stack, not in any grid.</returns>
+    private static BagItem StackOf(StockItem offer) => new()
+    {
+        Slot = offer.BagCell,
+        ItemId = offer.ItemId,
+        Count = offer.Count,
+        Wear = offer.Wear,
+        Insert = offer.Insert,
+        Fusion = offer.Fusion,
+        Pose = offer.Pose,
+        BoxItem = offer.BoxItem,
+        Used = offer.Used,
+        Extra = offer.Extra,
+    };
 
     /// <summary>Hooks the house entry event so visitors are shown the offers.</summary>
     internal void Start()
@@ -135,11 +156,10 @@ public sealed class HomeShopHandlers(
             || count == 0
             || count > stack.Count
             || price is < 1 or > MaxPrice
-            || items[itemId] is not { CellWidth: 1, CellHeight: 1 }
-            || piece.Stock.Exists(s => s.BagCell == bagSlot)
-            || c.Furniture.Any(f => f.Stock.Exists(s => s.BagCell == bagSlot)))
+            || items[itemId] is not { CellWidth: 1, CellHeight: 1 })
             return ValueTask.CompletedTask;
-        if (SaleRefusal(items, session, stack) is { } why)
+        // a slot already listed on a shelf or machine, or held by a trade, a stall, the pet express or the ridden vehicle, stays as it is
+        if ((BagLocks.LockedBy(session, bagSlot) ?? SaleRefusal(items, session, stack)) is { } why)
         {
             logger.LogWarning("[{Session}] {Name}: offer bag slot {Slot} on {Furn}: {Why}", session.Id, c.Name, bagSlot, furn, why);
             return ValueTask.CompletedTask;

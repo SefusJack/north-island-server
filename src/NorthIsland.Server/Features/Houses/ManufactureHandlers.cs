@@ -100,6 +100,14 @@ public sealed class ManufactureHandlers(
         else
             (smallTaken, canTaken) = (0, 0);
         var takeBag = new List<(BagItem Stack, byte Count)>();
+        var lockedPart = bagParts.Select(p => (p.Slot, Why: BagLocks.LockedBy(session, p.Slot))).FirstOrDefault(p => p.Why is not null);
+        if (lockedPart.Why is { } locked)
+        {
+            logger.LogWarning("[{Session}] {Name}: manufacture {Product}: bag slot {Slot} is {Why}", session.Id, character.Name,
+                NameOf(recipe.Product), lockedPart.Slot, locked);
+            RefusePetOrder(session, petSlot);
+            return ValueTask.CompletedTask;
+        }
         foreach (var (slot, count) in bagParts)
         {
             var stack = character.Bag.Find(b => b.Slot == slot);
@@ -313,6 +321,11 @@ public sealed class ManufactureHandlers(
         var running = character.MakeJobs.Where(j => j.StartedUtc is not null).ToList();
         if (mantle is null || running.Count == 0)
             return ValueTask.CompletedTask;
+        if (BagLocks.LockedBy(session, mantle.Slot) is { } locked)
+        {
+            logger.LogWarning("[{Session}] {Name}: Time Mantle in bag slot {Slot} is {Why}", session.Id, character.Name, mantle.Slot, locked);
+            return ValueTask.CompletedTask;
+        }
         mantle.Count--;
         if (mantle.Count == 0)
             character.Bag.Remove(mantle);
@@ -517,13 +530,16 @@ public sealed class ManufactureHandlers(
         job.StartedUtc = null;
     }
 
-    /// <summary>Returns whether the item is a Maid Robot or a Wit Maid; with one placed in the house, a pet can make things.</summary>
+    /// <summary>
+    /// Returns whether the item is a Maid Robot or a Wit Maid in any costume (<see cref="MaidHandlers.MaidFurniture"/>, which Item.dat lists as
+    /// 39096, 39117 to 39119, 39223, 39224 and 39243); with one placed in the house, a pet can make things.
+    /// </summary>
     /// <param name="itemId">The item id of a furniture piece.</param>
     /// <returns>True when it is a maid piece.</returns>
-    public static bool IsMaid(ushort itemId) =>
-        itemId is 39066 // Maid Robot
-            or 39096 // Wit Maid
-            or >= 39117 and <= 39119; // 39117 Wit Maid-Summer, 39119 Wit Maid-Cat
+    public static bool IsMaid(ushort itemId) => itemId == MaidRobot || MaidHandlers.MaidFurniture.Contains(itemId);
+
+    /// <summary>The item id of the Maid Robot, a maid piece that wears no costume.</summary>
+    public const ushort MaidRobot = 39066; // Maid Robot
 
     /// <summary>Reads the optional pet at the end of an order: a slot (u8) and a pet id (i32).</summary>
     /// <param name="r">The reader, positioned after the rest of the order.</param>

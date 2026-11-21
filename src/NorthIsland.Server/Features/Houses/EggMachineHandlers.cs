@@ -75,6 +75,14 @@ public sealed class EggMachineHandlers(
     /// <returns>The packet.</returns>
     private static byte[] EggsPacket(Furniture f) => new PacketWriter(Action62.Code, Action62.EggFeed).U16(f.Index).U8(f.Eggs).ToArray();
 
+    /// <summary>Adds items of a machine cell to a bag with every attribute the cell keeps, used and extra amounts included.</summary>
+    /// <param name="bag">The bag, or a trial copy of it (<see cref="Bag.Trial"/>).</param>
+    /// <param name="cell">The machine cell.</param>
+    /// <param name="count">How many items to add.</param>
+    /// <returns>The stacks touched and the number added to each, as Bag.Add returns them.</returns>
+    private List<(BagItem Item, byte Added)> Give(List<BagItem> bag, StockItem cell, int count) =>
+        Bag.Add(bag, items, cell.ItemId, count, cell.Wear, cell.Insert, cell.Fusion, cell.Pose, cell.BoxItem, cell.Used, cell.Extra);
+
     /// <summary>Builds the packet <c>62/25</c> that refuses a request.</summary>
     /// <param name="code">The refusal code.</param>
     /// <returns>The packet.</returns>
@@ -109,7 +117,8 @@ public sealed class EggMachineHandlers(
             || piece.Stock.Exists(s => s.Pos == cell)
             || FreeId(c) == 0)
             return ValueTask.CompletedTask;
-        var why = HomeShopHandlers.SaleRefusal(items, session, stack) ?? (!Bag.IsStackable(items[stack.ItemId]) ? "it does not stack" : null);
+        var why = BagLocks.LockedBy(session, bagSlot)
+            ?? HomeShopHandlers.SaleRefusal(items, session, stack) ?? (!Bag.IsStackable(items[stack.ItemId]) ? "it does not stack" : null);
         if (why is not null)
         {
             logger.LogWarning("[{Session}] {Name}: put bag slot {Slot} into egg machine {Furn}: {Why}", session.Id, c.Name, bagSlot, furn, why);
@@ -150,23 +159,9 @@ public sealed class EggMachineHandlers(
         var piece = c.Furniture.Find(f => f.Index == furn);
         if (piece is null || piece.SalePrice > 0 || piece.Stock.Find(s => s.Pos == cell) is not { } stock)
             return ValueTask.CompletedTask;
-        var trial = c.Bag.Select(b => new BagItem { Slot = b.Slot, ItemId = b.ItemId, Count = b.Count, Wear = b.Wear }).ToList();
-        if (Bag.Add(trial, items, stock.ItemId, stock.Count, stock.Wear).Sum(x => x.Added) != stock.Count)
+        if (Give(Bag.Trial(c.Bag), stock, stock.Count).Sum(x => x.Added) != stock.Count)
             return ValueTask.CompletedTask;
-        foreach (var (bagStack, added) in Bag.Add(c, items, stock.ItemId, stock.Count, stock.Wear, stock.Insert, stock.Fusion, stock.Pose, stock.BoxItem))
-            session.Send(
-                ItemMessages.BagAdd(
-                    new BagEntry
-                    {
-                        Slot = bagStack.Slot,
-                        ItemId = bagStack.ItemId,
-                        Count = added,
-                        Wear = bagStack.Wear,
-                        Insert = bagStack.Insert,
-                        FusionLevel = bagStack.Fusion,
-                        PoseItemId = bagStack.Pose,
-                        BoxItemId = bagStack.BoxItem
-                    }));
+        Bag.SendAdded(session, Give(c.Bag, stock, stock.Count));
         piece.Stock.Remove(stock);
         session.Send(new PacketWriter(Action62.Code, Action62.EggPlayed).U16(furn).U8(cell).ToArray());
         return ValueTask.CompletedTask;
@@ -204,10 +199,12 @@ public sealed class EggMachineHandlers(
         if (InOwnHouse(session) is not { } c || body.Length < 1)
             return ValueTask.CompletedTask;
         var stack = c.Bag.Find(b => b.Slot == body.Span[0]);
-        var piece = c.Furniture.Find(f => IsEggMachine(f.ItemId) && f.Eggs < 255);
-        if (stack is null || stack.ItemId != TokenEgg || piece is null)
+        var piece = c.Furniture.Find(f => IsEggMachine(f.ItemId) && f.Eggs < 255); // 255: the most token eggs a machine holds (one byte)
+        if (stack is null || stack.ItemId != TokenEgg || piece is null || BagLocks.IsLocked(session, stack.Slot))
         {
-            session.Send(Refuse(1));
+            if (stack is not null && BagLocks.LockedBy(session, stack.Slot) is { } locked)
+                logger.LogWarning("[{Session}] {Name}: token egg from bag slot {Slot}: it is {Why}", session.Id, c.Name, stack.Slot, locked);
+            session.Send(Refuse(1)); // code
             return ValueTask.CompletedTask;
         }
         piece.Eggs++;
@@ -281,8 +278,7 @@ public sealed class EggMachineHandlers(
             return ValueTask.CompletedTask;
         }
         var pick = filled[GameRandom.Shared.Next(filled.Count)];
-        var trial = me.Bag.Select(b => new BagItem { Slot = b.Slot, ItemId = b.ItemId, Count = b.Count, Wear = b.Wear }).ToList();
-        if (Bag.Add(trial, items, pick.ItemId, 1, pick.Wear).Sum(x => x.Added) != 1)
+        if (Give(Bag.Trial(me.Bag), pick, 1).Sum(x => x.Added) != 1)
         {
             session.Send(Refuse(5)); // code
             return ValueTask.CompletedTask;
@@ -291,20 +287,7 @@ public sealed class EggMachineHandlers(
         session.Send(PlayerMessages.MoneyChange(-price));
         owner.Character.Gold += price;
         ownerSession.Send(PlayerMessages.MoneyChange(price));
-        foreach (var (stack, added) in Bag.Add(me, items, pick.ItemId, 1, pick.Wear, pick.Insert, pick.Fusion, pick.Pose, pick.BoxItem))
-            session.Send(
-                ItemMessages.BagAdd(
-                    new BagEntry
-                    {
-                        Slot = stack.Slot,
-                        ItemId = stack.ItemId,
-                        Count = added,
-                        Wear = stack.Wear,
-                        Insert = stack.Insert,
-                        FusionLevel = stack.Fusion,
-                        PoseItemId = stack.Pose,
-                        BoxItemId = stack.BoxItem
-                    }));
+        Bag.SendAdded(session, Give(me.Bag, pick, 1));
         piece.Eggs--;
         pick.Count--;
         ownerSession.Send(new PacketWriter(Action62.Code, Action62.EggPlayed).U16(furn).U8(pick.Pos).ToArray());

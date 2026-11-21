@@ -3,7 +3,10 @@ namespace NorthIsland.Server.Features.Houses;
 /// <summary>The numbers for life in the house: mailbox size, tent limits, the Spa Bun, baths, training and the Magic Sandglass.</summary>
 public sealed class HouseLifeOptions
 {
-    /// <summary>The most letters a Mailbox keeps for an offline player; 0 means no limit.</summary>
+    /// <summary>
+    /// The most letters a character's Mailbox keeps, as a count of letters; 0 or less uses <see cref="FurMailHandlers.DefaultCapacity"/> (100
+    /// letters), since a box without a limit could be filled without end.
+    /// </summary>
     public int FurMailCapacity { get; set; }
 
     /// <summary>The most tents on one map; 0 means no limit.</summary>
