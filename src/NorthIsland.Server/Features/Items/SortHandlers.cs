@@ -49,7 +49,10 @@ public static class SortHandlers
     /// <param name="grid">The grid number.</param>
     /// <param name="items">Item definitions.</param>
     /// <param name="bagFirst">The item ids the bag sort puts first.</param>
-    /// <returns>The result code: sorted, already in order, busy (battle, stall or trade open) or not at the place of the grid.</returns>
+    /// <returns>
+    /// The result code: sorted, already in order, busy (battle, stall or trade open) or not at the place of the grid (the storeroom away from the
+    /// player's house, the bank without its item window open, the Item Bag while it is not open).
+    /// </returns>
     private static byte Sort(
         GameSession session,
         Character c,
@@ -63,20 +66,25 @@ public static class SortHandlers
         {
             case Bag: // bag: sort, then clear the client's bag and send it again even when nothing moved, so a sort also mends a client bag that drifted
             {
+                // committed slots (BagLocks) and the puppet's item keep their place
                 var sorted = GridSort.Sort(c.Bag, items, BagItem.LastSlot, World.Bag.Rows, World.Bag.MaxStack,
-                    b => b.Slot == session.Vehicle?.BagSlot || (c.PuppetBagSlot != 0 && b.Slot == c.PuppetBagSlot), first: bagFirst);
+                    b => BagLocks.IsLocked(session, b.Slot) || (c.PuppetBagSlot != 0 && b.Slot == c.PuppetBagSlot), first: bagFirst);
                 session.Send(new PacketWriter(Action23.Code, Action23.QolSort).U8(1).U8(Bag).ToArray());
                 if (c.Bag.Count > 0)
                     session.Send(ItemMessages.BagList(c.Bag.OrderBy(b => b.Slot).Select(Entry)));
                 return sorted ? Sorted : InOrder;
             }
-            case Bank: // bank: sort and send its items
+            case Bank: // bank: only while the bank's item window is open on the player's map, then sort and send its items
+                if (!OpenServices.IsOpen(session, c, ServiceWindow.BankItems))
+                    return NotHere;
                 if (!GridSort.Sort(c.Bank, items, BagItem.LastSlot, World.Bag.Rows, World.Bag.MaxStack))
                     return InOrder;
                 BankHandlers.SendItems(session, c);
                 return Sorted;
-            case ItemBag: // item bag: sort and send its list
+            case ItemBag: // item bag: only while the Item Bag is open (on any map), then sort and send its list
             {
+                if (!OpenServices.IsOpen(session, c, ServiceWindow.ItemBag))
+                    return NotHere;
                 if (!GridSort.Sort(c.MiniGrid, items, MiniGridHandlers.Cells, MiniGridHandlers.Rows, World.Bag.MaxStack))
                     return InOrder;
                 var w = new PacketWriter(Action68.Code, Action68.List);
