@@ -249,7 +249,7 @@ public sealed class WorldHandlers(
 
         var chat = ChatMessage.Parse(channel, body.Span);
         logger.LogInformation("[{Session}] chat {Channel}{Target} {Name}: {Text}", session.Id, channel,
-            chat.TargetId is { } t ? $" to {t}" : "", c.Name, chat.Text);
+            chat.TargetId is { } t ? $" to {t}" : "", c.Name, LogText.Printable(chat.Text));
         if (await gm.TryHandleAsync(session, chat.Text).ConfigureAwait(false))
             return;
 
@@ -345,7 +345,7 @@ public sealed class WorldHandlers(
     /// <param name="body">The packet body after the action and sub code.</param>
     internal ValueTask OnServerIpEcho(GameSession session, ReadOnlyMemory<byte> body)
     {
-        logger.LogInformation("[{Session}] client sees server at {Address}", session.Id, ServerIpEcho.Parse(body.Span).Address);
+        logger.LogInformation("[{Session}] client sees server at {Address}", session.Id, LogText.Printable(ServerIpEcho.Parse(body.Span).Address));
         return ValueTask.CompletedTask;
     }
 
