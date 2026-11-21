@@ -109,8 +109,8 @@ public sealed class ExpressHandlers(
 
     /// <summary>
     /// Checks that a trip can go: the stacks exist and may change hands (not flagged no-trade, no pose, not the ridden vehicle, no crystal stone
-    /// that cannot be passed on, as the client's express window refuses), the target is another online player who does not block the sender,
-    /// and the target's bag takes them.
+    /// that cannot be passed on, a known item of one cell, not the Magic Magnet, as the client's express window refuses), the target is another
+    /// online player who does not block the sender, and the target's bag takes them.
     /// </summary>
     /// <param name="session">The sender's session.</param>
     /// <param name="c">The sender's character.</param>
@@ -128,7 +128,9 @@ public sealed class ExpressHandlers(
         {
             var stack = c.Bag.Find(b => b.Slot == slot);
             if (stack is null || count == 0 || stack.Count < count || Bag.IsNoTrade(items, stack) || session.Vehicle?.BagSlot == slot
-                || stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable)
+                || stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable
+                || items[stack.ItemId] is not { CellWidth: <= 1, CellHeight: <= 1 } // unknown or oversized: only known one-cell items
+                || stack.ItemId == MagnetHandlers.MagicMagnet)
                 return (1, stack?.ItemId ?? 0);
         }
         if (world.SessionOf(targetId) is not { } target || target.ActiveCharacter is not { } tc || targetId == session.Account!.LoginId)

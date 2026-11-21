@@ -8,10 +8,12 @@ namespace NorthIsland.Server.Features.PetCare;
 /// <summary>Handles the pet storage of the inn: showing it and moving pets between the team and the storage.</summary>
 /// <param name="world">The world state, passed on when a pet leaves the player.</param>
 /// <param name="space">The space contract, which tells how many places the storage has.</param>
+/// <param name="combat">The combat stats, resent when the player gets off a pet that goes into the storage.</param>
 /// <param name="logger">The logger.</param>
 public sealed class PetStorageHandlers(
     WorldState world,
     SpaceContract space,
+    CombatStats combat,
     ILogger<PetStorageHandlers> logger)
 {
     /// <summary>
@@ -124,7 +126,7 @@ public sealed class PetStorageHandlers(
         }
         foreach (var (pet, idx) in storedAt)
         {
-            PetTradeHandlers.Give(world, session, character, pet);
+            Pets.Exile(session, character, pet, world, combat);
             pet.Slot = idx;
             character.StoredPets.Add(pet);
         }
