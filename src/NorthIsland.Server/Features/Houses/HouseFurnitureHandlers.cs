@@ -219,15 +219,6 @@ public sealed class HouseFurnitureHandlers(
     private List<(BagItem Item, byte Added)> Give(List<BagItem> bag, CupboardItem content) =>
         Bag.Add(bag, items, content.ItemId, content.Count, content.Wear, content.Insert, content.Fusion, content.Pose, content.BoxItem);
 
-    /// <summary>
-    /// Whether a bag stack carries nothing a box cannot keep. A box keeps only the item id and the count and gives its items back with nothing
-    /// else, so a stack with a stone, a fusion level, a pose, a box or a used or extra amount would lose it. The wear is not checked: it comes
-    /// back as 1, as before.
-    /// </summary>
-    /// <param name="stack">The bag stack.</param>
-    /// <returns>True when the stack can go into a box.</returns>
-    private static bool Plain(BagItem stack) => GridStore.Same(stack, new BagItem { ItemId = stack.ItemId, Wear = stack.Wear });
-
     /// <summary>Finds an unused cupboard content id.</summary>
     /// <param name="c">The character.</param>
     /// <returns>A free id from 1 to 50, or 0 when all are used.</returns>
@@ -263,7 +254,7 @@ public sealed class HouseFurnitureHandlers(
             var stack = body.Length >= 4 ? c.Bag.Find(b => b.Slot == body.Span[3]) : null;
             if (held is not null || stack is null || items[stack.ItemId] is not { } item || !BoxAccepts(kind, item))
                 return ValueTask.CompletedTask;
-            if ((BagLocks.LockedBy(session, stack.Slot) ?? (Plain(stack) ? null : "a stack whose attributes a box does not keep")) is { } why)
+            if ((BagLocks.LockedBy(session, stack.Slot) ?? (GridStore.IsPlain(stack) ? null : "a stack whose attributes a box does not keep")) is { } why)
             {
                 logger.LogWarning("[{Session}] {Name}: box {Kind} slot {Slot} store of bag slot {Bag}: it is {Why}", session.Id, c.Name, kind, slot,
                     stack.Slot, why);

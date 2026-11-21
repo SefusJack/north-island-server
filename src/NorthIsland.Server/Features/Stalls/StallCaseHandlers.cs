@@ -48,14 +48,6 @@ public sealed class StallCaseHandlers(
     /// <returns>True when sellable.</returns>
     private bool Sellable(ushort itemId) => items[itemId] is { } r && r.Type is 23 or 32 && (r.Flags & 2) == 0;
 
-    /// <summary>
-    /// Tells whether a stack carries nothing a case cannot keep. A case keeps only the item id, the count and the wear and gives its items back
-    /// with nothing else, so a stack with a pose, a stone, a fusion level, a used or extra amount or a box would lose it, or have it reset.
-    /// </summary>
-    /// <param name="stack">The bag stack.</param>
-    /// <returns>True when the stack can go into a case unchanged.</returns>
-    private static bool Plain(BagItem stack) => GridStore.Same(stack, new BagItem { ItemId = stack.ItemId, Wear = stack.Wear });
-
     /// <summary>Builds the packet that shows or updates a case.</summary>
     /// <param name="owner">The owner's login id.</param>
     /// <param name="c">The case.</param>
@@ -134,7 +126,7 @@ public sealed class StallCaseHandlers(
         var stack = c.Bag.Find(b => b.Slot == bagSlot);
         if (shelf is null || stack is null || !Sellable(stack.ItemId) || price is < 1 or > MaxPrice)
             return;
-        if (!Plain(stack))
+        if (!GridStore.IsPlain(stack))
         {
             logger.LogWarning("[{Session}] {Name}: stall case refused for bag slot {Slot}: the stack carries more than a case keeps", session.Id, c.Name,
                 bagSlot);
@@ -182,7 +174,7 @@ public sealed class StallCaseHandlers(
         var stack = c.Bag.Find(b => b.Slot == bagSlot);
         if (stall is null || stack is null || stack.ItemId != stall.ItemId)
             return;
-        if (stack.Wear != stall.Wear || !Plain(stack))
+        if (stack.Wear != stall.Wear || !GridStore.IsPlain(stack))
         {
             logger.LogWarning("[{Session}] {Name}: bag slot {Slot} not added to stall case {Case}: not the same wear or carries more than a case keeps",
                 session.Id, c.Name, bagSlot, caseNo);
