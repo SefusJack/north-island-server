@@ -8,7 +8,7 @@ namespace NorthIsland.Server.Features.Minigames;
 /// <param name="world">The world state, for map changes and the join and leave events.</param>
 /// <param name="quiz">The Q&amp;A handler, which supplies the questions and the prizes.</param>
 /// <param name="rankings">The rankings, which get the final order.</param>
-/// <param name="calendar">The event calendar, which tells whether the Golden Compass is open.</param>
+/// <param name="calendar">The event calendar, which tells whether the Golden Compass is open and in which opening window.</param>
 /// <param name="options">The minigame options.</param>
 /// <param name="logger">The logger.</param>
 public sealed class CompassHandlers(
@@ -122,7 +122,9 @@ public sealed class CompassHandlers(
     /// <summary>
     /// Adds the player to the game, opens their screen and starts the game when none is running. A player already in the game gets the
     /// screen again. While the Golden Compass is closed by the weekly hours, or once the running game is past its start delay, the player
-    /// is not let in and is sent back to the lobby, since the arena has nothing else to do.
+    /// is not let in and is sent back to the lobby, since the arena has nothing else to do. That map change waits for the player's session
+    /// gate: the join runs inside the arena's map-loaded report, whose handling (ground items, tents, map events) has to finish for the
+    /// arena before the player is moved on.
     /// </summary>
     /// <param name="session">The player's session.</param>
     public void Join(GameSession session)
@@ -148,7 +150,7 @@ public sealed class CompassHandlers(
         if (refused is not null)
         {
             logger.LogWarning("[{Session}] {Name}: Golden Compass join refused ({Why}), sent back to the lobby", session.Id, character.Name, refused);
-            world.ChangeMap(session, EventArenas.Lobby);
+            _ = SendOut(session, closeScreen: false);
             return;
         }
         session.Send(CompassMessages.Open());
@@ -184,7 +186,7 @@ public sealed class CompassHandlers(
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(options.Value.CompassStartSeconds)).ConfigureAwait(false);
-            var window = quiz.OpeningWindow(EventCalendar.ActivityCompass);
+            var window = calendar.OpeningWindow(EventCalendar.ActivityCompass);
             List<Player> joined;
             lock (_lock)
             {
@@ -290,14 +292,16 @@ public sealed class CompassHandlers(
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="before">Work done first under the gate, such as giving the prize; null for none.</param>
-    private async Task SendOut(GameSession session, Action? before = null)
+    /// <param name="closeScreen">False for a player who was never let in, whose Golden Compass screen was not opened.</param>
+    private async Task SendOut(GameSession session, Action? before = null, bool closeScreen = true)
     {
         using (await session.ExclusiveAsync().ConfigureAwait(false))
         {
             if (session.State != SessionState.InWorld || session.ActiveCharacter?.MapId != CompassMapId)
                 return;
             before?.Invoke();
-            session.Send(CompassMessages.Close());
+            if (closeScreen)
+                session.Send(CompassMessages.Close());
             world.ChangeMap(session, EventArenas.Lobby);
         }
     }
