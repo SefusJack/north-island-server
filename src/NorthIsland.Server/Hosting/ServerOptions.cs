@@ -80,7 +80,7 @@ public sealed class ServerOptions
     public int MaxConnectionsPerAddress { get; set; } = 10;
 
     /// <summary>The seconds a connection has to log in, from when it connects or goes back to the login form; 0 or less for no limit.</summary>
-    public int LoginTimeoutSeconds { get; set; } = 120;
+    public int LoginTimeoutSeconds { get; set; } = 900; // 15 minutes: the client connects before the login form, where a player may sit a while
 
     /// <summary>
     /// The minutes a logged-in connection may send nothing before it is closed; 0 or less turns it off (the default: the client sends no
