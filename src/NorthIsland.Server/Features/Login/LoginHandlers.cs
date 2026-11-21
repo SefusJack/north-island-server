@@ -189,7 +189,7 @@ public sealed partial class LoginHandlers(
         if (MayLog(session))
         {
             logger.LogInformation("[{Session}] login '{Name}' version {Version} Item.Dat size {ItemDat}",
-                session.Id, LogText.Printable(name), version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
+                session.Id, name, version, itemDatSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "(none)");
         }
 
         if (!_options.AcceptsClientVersion(version))
