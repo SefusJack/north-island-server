@@ -246,6 +246,12 @@ public sealed class BattleOptions
     /// <summary>The chance in percent that a defeated monster drops one item of its item list.</summary>
     public int MonsterDropChancePercent { get; set; } = 30;
 
+    /// <summary>
+    /// The most rank steps that make an item of a monster's list rarer: each rank an item sits above the list's lowest-ranked item halves its
+    /// drop weight, for at most this many ranks, so 4 keeps the rarest item at no less than a sixteenth of the most common one; 0 or less weighs all items alike.
+    /// </summary>
+    public int MaxDropRankGap { get; set; } = 4;
+
     /// <summary>Items any monster within a level range may drop on top of its own list, such as the Alchemy Books; empty turns them off.</summary>
     public List<LevelDrop> LevelDrops { get; set; } = [];
 

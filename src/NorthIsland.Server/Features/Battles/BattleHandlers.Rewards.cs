@@ -331,7 +331,7 @@ public sealed partial class BattleHandlers
     /// <param name="npc">The monster's record.</param>
     /// <returns>The item id, or null.</returns>
     private ushort? RollDrop(NorthIsland.GameData.Npcs.NpcRecord npc) =>
-        BattleFormulas.Drop(npc, options.Value.MonsterDropChancePercent, GameRandom.Shared, id => items[id]?.ShopColumn ?? 1);
+        BattleFormulas.Drop(npc, options.Value.MonsterDropChancePercent, GameRandom.Shared, id => items[id]?.ShopColumn ?? 1, options.Value.MaxDropRankGap);
 
     /// <summary>Rolls the item a monster drops from the seasonal event table, once per monster fighter.</summary>
     /// <param name="share">The drop.</param>

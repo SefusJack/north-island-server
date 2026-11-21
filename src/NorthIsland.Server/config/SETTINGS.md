@@ -26,6 +26,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `LogDirectory` | The directory of the log files |
 | `AutosaveMinutes` | The minutes between autosaves; 0 or less turns them off |
 | `MonsterDropChancePercent` | The chance in percent that a defeated monster drops one item of its item list |
+| `MaxDropRankGap` | How unevenly a monster's item list is weighted: each rank an item sits above the list's lowest-ranked item halves its weight, for at most this many ranks (default 4, so the rarest item drops at least a sixteenth as often as the most common one); 0 weighs every item alike |
 | `FieldEncounterPercent` | The chance in percent that a step of a free player starts a field fight; 0 turns field fights off |
 | `ExpMultiplierCap` | The largest product of the seasonal and potion experience multipliers; 0 or less means no cap |
 | `MonsterDamageScale` | A factor applied to the damage monsters do |
