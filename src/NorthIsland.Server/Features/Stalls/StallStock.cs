@@ -27,7 +27,8 @@ public static class StallStock
     /// <returns>The reason for the log, or null when the stack may be sold.</returns>
     public static string? Untransferable(ItemData items, BagItem stack) =>
         Bag.IsNoTrade(items, stack) ? "cannot be traded"
-            : stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable ? "its crystal stone cannot be passed on"
+            : stack.Insert is >= HomeShopHandlers.FirstNonTransferable and <= HomeShopHandlers.LastNonTransferable
+                ? "its crystal stone cannot be passed on"
                 : null;
 
     /// <summary>

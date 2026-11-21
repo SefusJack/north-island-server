@@ -39,7 +39,8 @@ public sealed class UtensilStallHandlers(
     /// <param name="stack">The bag stack.</param>
     /// <returns>True when the stack can be offered.</returns>
     private bool Stallable(BagItem stack) =>
-        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.EquipSlot == 7) && StallStock.Untransferable(items, stack) is null;
+        items[stack.ItemId] is { } r && ((r.CellWidth > 1 || r.CellHeight > 1) || r.EquipSlot == 7)
+            && StallStock.Untransferable(items, stack) is null;
 
     /// <summary>Opens a large item stall from the player's list of priced bag slots.</summary>
     /// <param name="session">The player's session.</param>
@@ -64,7 +65,8 @@ public sealed class UtensilStallHandlers(
             var why = StallStock.OpenRefusal(items, session, stack, slot) ?? (Stallable(stack!) ? null : "cannot be sold in a large-item stall");
             if (why is not null)
             {
-                logger.LogWarning("[{Session}] {Name}: bag slot {Slot} left out of the large-item stall: {Why}", session.Id, character.Name, slot, why);
+                logger.LogWarning("[{Session}] {Name}: bag slot {Slot} left out of the large-item stall: {Why}", session.Id, character.Name, slot,
+                    why);
                 continue;
             }
             stall.Prices[slot] = price;

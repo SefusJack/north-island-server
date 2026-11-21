@@ -283,7 +283,8 @@ public sealed class StallCaseHandlers(
         if (ownerId == session.Account.LoginId || tents.HouseOwnerFor(me, ownerId) is not { Session: { } ownerSession } owner
             || owner.Character.MapId != me.MapId)
         {
-            logger.LogWarning("[{Session}] {Name}: stall case buy refused, not in the house of {Owner} with its owner there", session.Id, me.Name, ownerId);
+            logger.LogWarning("[{Session}] {Name}: stall case buy refused, not in the house of {Owner} with its owner there", session.Id, me.Name,
+                ownerId);
             return ValueTask.CompletedTask;
         }
         var oc = owner.Character;
