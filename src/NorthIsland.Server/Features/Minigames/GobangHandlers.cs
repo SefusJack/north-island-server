@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NorthIsland.Protocol.IO;
 using NorthIsland.Protocol.Messages.Events;
@@ -12,10 +13,12 @@ namespace NorthIsland.Server.Features.Minigames;
 /// </summary>
 /// <param name="world">The world state, for sessions and the leave events.</param>
 /// <param name="tents">The house handlers, for house maps and their furniture.</param>
+/// <param name="lifetime">The host lifetime, whose stopping event hands back the antes held before the players are saved.</param>
 /// <param name="logger">The logger.</param>
 public sealed class GobangHandlers(
     WorldState world,
     TentHandlers tents,
+    IHostApplicationLifetime lifetime,
     ILogger<GobangHandlers> logger)
 {
     /// <summary>Item id of the game console that opens the game.</summary>
@@ -82,11 +85,37 @@ public sealed class GobangHandlers(
     /// <summary>Guards the halls and their tables.</summary>
     private readonly Lock _lock = new();
 
-    /// <summary>Subscribes to the world events so that players who leave the world or the map leave their table and hall.</summary>
+    /// <summary>
+    /// Subscribes to the world events so that players who leave the world or the map leave their table and hall, and to the server's stop so
+    /// that the games being played end in a draw first.
+    /// </summary>
     internal void Start()
     {
         world.Leaving += s => Leave(s, quit: true);
         world.MapLeaving += s => Leave(s, quit: true);
+        lifetime.ApplicationStopping.Register(DrawAll);
+    }
+
+    /// <summary>
+    /// Ends every game being played in a draw, which hands each player their ante back. It runs when the server stops, before the sessions
+    /// close and their characters are saved: the antes are held only here, so a game still running then would otherwise go to whoever
+    /// stays connected longest, and to no one when the save after an autosave is never made.
+    /// </summary>
+    private void DrawAll()
+    {
+        lock (_lock)
+        {
+            foreach (var (map, hall) in _halls)
+            {
+                for (var t = 1; t <= Tables; t++)
+                {
+                    if (!hall.Tables[t].Playing)
+                        continue;
+                    Finish(hall.Tables[t], 0, new byte[5]); // side 0: a draw, no winning cells
+                    logger.LogInformation("Five in a row at table {Table} of house map {Map} ends in a draw: the server is stopping", t, map);
+                }
+            }
+        }
     }
 
     /// <summary>Builds a Five in a Row packet.</summary>
