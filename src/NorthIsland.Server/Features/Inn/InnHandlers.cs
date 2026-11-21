@@ -5,8 +5,9 @@ using NorthIsland.Protocol.Opcodes;
 namespace NorthIsland.Server.Features.Inn;
 
 /// <summary>
-/// Handles the inn rest: offering a rest for a price, and healing the team and its pets when the player accepts. An offer belongs to the
-/// event run that made it and lasts while that run goes on, on the map it was made on, outside battle.
+/// Handles the inn rest: offering a rest for a price, and healing the team and its pets when the player accepts. An offer is kept like a service
+/// window (<see cref="OpenServices"/>): for the character it was made to, on the map it was made on, outside battle, until it is answered or the
+/// player leaves the map; it outlives the event run that made it, which a click on the world ends while the offer is shown.
 /// </summary>
 /// <param name="world">The world state, used to find the team members and their sessions.</param>
 /// <param name="maps">The map data, used to find the npc of the running event.</param>
@@ -24,11 +25,11 @@ public sealed class InnHandlers(
     private static void Withdraw(GameSession session)
     {
         session.Inn.PendingPrice = null;
-        session.Inn.OfferRun = null;
+        session.Inn.OfferCharacter = null;
     }
 
     /// <summary>
-    /// Offers the player a rest at the inn and remembers the price, the event run that offers it and the map. The price is sent with
+    /// Offers the player a rest at the inn and remembers the price, the character it is offered to and the map. The price is sent with
     /// <c>31/2</c>; <c>-1</c> tells the client that nobody needs to rest. The rest is free when the event runs at the Curer npc.
     /// </summary>
     /// <param name="session">The player's session.</param>
@@ -43,7 +44,7 @@ public sealed class InnHandlers(
             return;
         }
         var price = IsFreeCurer(session, character) ? 0 : RestPrice(character.Level);
-        (session.Inn.PendingPrice, session.Inn.OfferRun, session.Inn.OfferMap) = (price, session.Event, character.MapId);
+        (session.Inn.PendingPrice, session.Inn.OfferCharacter, session.Inn.OfferMap) = (price, character, character.MapId);
         session.Send(InnMessages.RestPrice(price));
         logger.LogInformation("[{Session}] inn: rest offered to {Name} for {Price} gold", session.Id, character.Name, price);
     }
@@ -74,8 +75,8 @@ public sealed class InnHandlers(
 
     /// <summary>
     /// Handles accepting the offered rest (<c>31/1</c>): takes the price, answers the client, and restores HP and SP of everyone who rests with the
-    /// player and of their pets. It is refused without an offer, in a battle, and when the event run that made the offer is no longer going on
-    /// or the player is not on its map (answered so that the event goes on); it is answered with a failure when the gold is not enough.
+    /// player and of their pets. It is refused without an offer, in a battle, and when the offer was made to another character of the session or
+    /// the player is not on its map (answered so that the event goes on); it is answered with a failure when the gold is not enough.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="body">The packet body after the action and sub code.</param>
@@ -89,8 +90,8 @@ public sealed class InnHandlers(
         }
         var offer = session.Inn;
         var why = session.Battle is not null ? "in a battle"
-            : offer.OfferRun is not { } run || !ReferenceEquals(session.Event, run) ? "the event that offered it is over"
-            : run.MapId != character.MapId || offer.OfferMap != character.MapId ? "the player left the map of the offer"
+            : !ReferenceEquals(offer.OfferCharacter, character) ? "it was offered to another character"
+            : offer.OfferMap != character.MapId ? "the player left the map of the offer"
             : null;
         Withdraw(session);
         if (why is not null)
