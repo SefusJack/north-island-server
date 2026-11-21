@@ -26,6 +26,9 @@ public sealed class HotSpringHandlers(
 
         /// <summary>The bonus steps the visit gave so far.</summary>
         public int Steps { get; set; }
+
+        /// <summary>Whether the visit already logged that it reached its cap, so the client's repeated step-ins log it only once.</summary>
+        public bool CapLogged { get; set; }
     }
 
     /// <summary>Subscribes to the world's events: a player leaving the world or their map stops bathing and ends their visit.</summary>
@@ -81,12 +84,15 @@ public sealed class HotSpringHandlers(
             return ValueTask.CompletedTask;
         var visit = session.Feature<Visit>();
         if (visit.Map != character.MapId)
-            (visit.Map, visit.Steps) = (character.MapId, 0);
+            (visit.Map, visit.Steps, visit.CapLogged) = (character.MapId, 0, false);
         if (visit.Steps >= o.MaxPerVisit || character.SpringBonus >= o.MaxTotal)
         {
-            logger.LogWarning(
-                "[{Session}] {Name}: steps into the hot spring on map {Map}, but has {Steps}/{Max} steps this visit and {Bonus}/{Total} points",
-                session.Id, character.Name, character.MapId, visit.Steps, o.MaxPerVisit, character.SpringBonus, o.MaxTotal);
+            // the normal client sends a step-in again on every move in the water, so the cap is logged once per visit
+            if (!visit.CapLogged)
+                logger.LogInformation(
+                    "[{Session}] {Name}: steps into the hot spring on map {Map}, but has {Steps}/{Max} steps this visit and {Bonus}/{Total} points",
+                    session.Id, character.Name, character.MapId, visit.Steps, o.MaxPerVisit, character.SpringBonus, o.MaxTotal);
+            visit.CapLogged = true;
             return ValueTask.CompletedTask;
         }
         Stop(session);
