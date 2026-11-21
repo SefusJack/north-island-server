@@ -93,7 +93,8 @@ public sealed class MarriageHandlers(
 
     /// <summary>
     /// Tells a player who was divorced while offline, and sends the spouse card and online state of a married player; the spouse is told they are
-    /// online.
+    /// online. A married player's flags are set from the registry (married on, applied off), for a wedding that ended after the character's last
+    /// save.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The character that entered the world.</param>
@@ -107,6 +108,8 @@ public sealed class MarriageHandlers(
         }
         if (marriages.CoupleOf(id) is not { } couple)
             return;
+        marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
+        marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: true);
         marriages.Refresh(id, character);
         SendCard(session, couple);
         if (world.SessionOf(couple.SpouseOf(id).Id) is { } spouse)
@@ -129,6 +132,8 @@ public sealed class MarriageHandlers(
             Cancel(divorce, id, divorce: true);
         if (marriages.CoupleOf(id) is not { } couple)
             return;
+        marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
+        marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: true);
         marriages.Refresh(id, character);
         if (world.SessionOf(couple.SpouseOf(id).Id) is { } spouse)
             spouse.Send(MarriageMessages.SpouseOnline(false));
@@ -484,9 +489,11 @@ public sealed class MarriageHandlers(
                 // the wait is asynchronous, so a packet that started the ceremony and holds its gate goes on and lets it go
                 using (await s.ExclusiveAsync().ConfigureAwait(false)) // this task holds no other gate; the flags change between the spouse's packets
                 {
-                    if (s.Closing) // the character is saved for the last time (or about to be) and must not change any more
+                    // a session that is only closing (kicked) is still saved after this, as its cleanup waits for the gate; once the cleanup
+                    // began the character was saved for the last time, and the next login sets the flags from the registry (SendOnLogin)
+                    if (s.CleaningUp)
                     {
-                        logger.LogWarning("[{Session}] {Name}: the wedding flags are not set, the connection ended", s.Id, c.Name);
+                        logger.LogWarning("[{Session}] {Name}: the wedding flags wait for the next login, the last save is done", s.Id, c.Name);
                         continue;
                     }
                     marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: false);
