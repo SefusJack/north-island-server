@@ -93,8 +93,9 @@ public sealed class MarriageHandlers(
 
     /// <summary>
     /// Tells a player who was divorced while offline, and sends the spouse card and online state of a married player; the spouse is told they are
-    /// online. A married player's flags are set from the registry (married on, applied off), for a wedding that ended after the character's last
-    /// save.
+    /// online. The marriage flags are set again from the registry, for a wedding or divorce that ended after the character's last save: a
+    /// married player gets <see cref="SetMarriedFlags"/>; an unmarried one loses the married flag, and the applied flag too unless an application
+    /// of theirs is still running.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="character">The character that entered the world.</param>
@@ -102,14 +103,15 @@ public sealed class MarriageHandlers(
     {
         var id = session.Account!.LoginId;
         if (marriages.TakeDivorcedWhileAway(id))
-        {
             session.Send(MarriageMessages.DivorceResult(MarriageMessages.SpouseDivorced));
-            marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: false);
-        }
         if (marriages.CoupleOf(id) is not { } couple)
+        {
+            marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: false);
+            if (marriages.ApplicationOf(id, GameClock.UtcNow) is null) // expired or never made; Apply records it before setting the flag
+                marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
             return;
-        marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
-        marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: true);
+        }
+        SetMarriedFlags(session, character);
         marriages.Refresh(id, character);
         SendCard(session, couple);
         if (world.SessionOf(couple.SpouseOf(id).Id) is { } spouse)
@@ -132,11 +134,19 @@ public sealed class MarriageHandlers(
             Cancel(divorce, id, divorce: true);
         if (marriages.CoupleOf(id) is not { } couple)
             return;
-        marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
-        marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: true);
+        SetMarriedFlags(session, character);
         marriages.Refresh(id, character);
         if (world.SessionOf(couple.SpouseOf(id).Id) is { } spouse)
             spouse.Send(MarriageMessages.SpouseOnline(false));
+    }
+
+    /// <summary>Gives a married player's character the married flag and takes away the applied flag; the caller holds the player's gate.</summary>
+    /// <param name="session">The player's session, told of each flag that changes.</param>
+    /// <param name="character">The player's character.</param>
+    private void SetMarriedFlags(GameSession session, Character character)
+    {
+        marks.TrySetFlag(session, character, MarriageRegistry.AppliedFlag, on: false);
+        marks.TrySetFlag(session, character, MarriageRegistry.MarriedFlag, on: true);
     }
 
     /// <summary>
@@ -496,8 +506,7 @@ public sealed class MarriageHandlers(
                         logger.LogWarning("[{Session}] {Name}: the wedding flags wait for the next login, the last save is done", s.Id, c.Name);
                         continue;
                     }
-                    marks.TrySetFlag(s, c, MarriageRegistry.AppliedFlag, on: false);
-                    marks.TrySetFlag(s, c, MarriageRegistry.MarriedFlag, on: true);
+                    SetMarriedFlags(s, c);
                     SendCard(s, couple);
                 }
             }
