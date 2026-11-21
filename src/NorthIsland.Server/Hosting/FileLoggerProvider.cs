@@ -5,8 +5,10 @@ namespace NorthIsland.Server.Hosting;
 
 /// <summary>
 /// Logger provider that appends to one log file per day, <c>server-yyyyMMdd.log</c>, continued in <c>server-yyyyMMdd.2.log</c> and so on when a
-/// file reaches its size cap; once the day's last part is full, the day's further lines are dropped. Control characters in a message are
-/// escaped, so that text a client sent cannot fake log lines or terminal codes.
+/// file reaches its size cap. Once the day's last part is full, the day's oldest part is deleted and the others move down one number (part 2
+/// becomes the first part, and so on), and a new last part begins: the day keeps its latest lines, up to the parts per day times the size cap,
+/// so that a flood of lines cannot blind the log for the rest of the day. Control characters in a message are escaped, so that text a client
+/// sent cannot fake log lines or terminal codes.
 /// </summary>
 public sealed class FileLoggerProvider : ILoggerProvider
 {
@@ -31,17 +33,17 @@ public sealed class FileLoggerProvider : ILoggerProvider
     /// <summary>Serializes writing and the change of the day's file.</summary>
     private readonly Lock _lock = new();
 
-    /// <summary>The writer of the current file; null before the first line, after disposal and once the day's last part is full.</summary>
+    /// <summary>The writer of the current file; null before the first line and after disposal.</summary>
     private StreamWriter? _writer;
+
+    /// <summary>The bytes in the current file: its length when it was opened, plus the bytes written since.</summary>
+    private long _written;
 
     /// <summary>The day the current file belongs to.</summary>
     private DateOnly _day;
 
     /// <summary>The part of the day the current file is, from 1.</summary>
     private int _part;
-
-    /// <summary>True once the day's last part is full and the day's further lines are dropped.</summary>
-    private bool _dayFull;
 
     /// <summary>Creates the provider and the log directory.</summary>
     /// <param name="directory">The directory for the log files.</param>
@@ -69,7 +71,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
         }
     }
 
-    /// <summary>Writes a timestamped line, and the exception when there is one, to the day's file, unless the day's files are full.</summary>
+    /// <summary>Writes a timestamped line, and the exception when there is one, to the day's file.</summary>
     /// <param name="category">The logger category.</param>
     /// <param name="level">The log level.</param>
     /// <param name="message">The formatted message; its control characters are escaped.</param>
@@ -80,58 +82,97 @@ public sealed class FileLoggerProvider : ILoggerProvider
         var line = string.Create(CultureInfo.InvariantCulture, $"{now:HH:mm:ss.fff} {LevelTag(level)}: {category}: {LogText.Printable(message)}");
         lock (_lock)
         {
-            if (WriterFor(DateOnly.FromDateTime(now)) is not { } writer)
-                return;
-            writer.WriteLine(line);
+            var writer = WriterFor(DateOnly.FromDateTime(now));
+            WriteLine(writer, line);
             if (exception is not null)
-                writer.WriteLine(exception.ToString());
+                WriteLine(writer, exception.ToString());
         }
     }
 
+    /// <summary>Writes a line to the current file and counts its bytes.</summary>
+    /// <param name="writer">The writer of the current file.</param>
+    /// <param name="line">The line, without its line break.</param>
+    private void WriteLine(StreamWriter writer, string line)
+    {
+        writer.WriteLine(line);
+        _written += writer.Encoding.GetByteCount(line) + writer.Encoding.GetByteCount(writer.NewLine);
+    }
+
     /// <summary>
-    /// Gives the writer for a day: opens the day's first part when the day has changed, and the next part when the current one reached its size
-    /// cap; writes a last line and gives null once the day's last part is full.
+    /// Gives the writer for a day: opens the day's first part when the day has changed (or after disposal), the next part when the current one
+    /// reached its size cap, and once the day's last part is full drops the day's oldest part (<see cref="DropOldestPart"/>) and begins a new last
+    /// part, with a line that says so.
     /// </summary>
     /// <param name="day">The day of the line being written.</param>
-    /// <returns>The writer, or null when the day's files are full.</returns>
-    private StreamWriter? WriterFor(DateOnly day)
+    /// <returns>The writer.</returns>
+    private StreamWriter WriterFor(DateOnly day)
     {
-        if (day != _day || (_writer is null && !_dayFull))
+        if (day != _day || _writer is null)
         {
             _writer?.Dispose();
             _day = day;
             _part = 1;
-            _dayFull = false;
-            _writer = Open(day, _part);
+            _writer = Open(day, _part, append: true);
         }
-        while (_writer is not null && _writer.BaseStream.Length >= _maxFileBytes)
+        while (_written >= _maxFileBytes && _part < _filesPerDay)
         {
-            if (_part >= _filesPerDay)
-            {
-                _writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{DateTime.Now:HH:mm:ss.fff} warn: {nameof(FileLoggerProvider)}: "
-                    + $"the day's {_filesPerDay} log file(s) are full; the day's further lines are dropped"));
-                _writer.Dispose();
-                _writer = null;
-                _dayFull = true;
-                break;
-            }
             _writer.Dispose();
-            _writer = Open(day, ++_part);
+            _writer = Open(day, ++_part, append: true);
         }
+        if (_written < _maxFileBytes)
+            return _writer;
+
+        _writer.Dispose();
+        var dropped = DropOldestPart(day);
+        _writer = Open(day, _part, append: false); // a moved part's name is free now; when the move failed, the full last part starts over
+        WriteLine(_writer, string.Create(CultureInfo.InvariantCulture, $"{DateTime.Now:HH:mm:ss.fff} warn: {nameof(FileLoggerProvider)}: the day's "
+            + $"{_filesPerDay} log file(s) were full; {(dropped ? "the oldest was deleted and the others renumbered" : "the last one starts over")}"));
         return _writer;
     }
 
-    /// <summary>Opens a part of a day's log in append mode.</summary>
+    /// <summary>
+    /// Deletes the day's first (oldest) part and moves each later part down one number, so that the name of the last part is free. With one part
+    /// per day, only deletes it.
+    /// </summary>
     /// <param name="day">The day.</param>
-    /// <param name="part">The part, from 1; the first part has no number in its name.</param>
-    /// <returns>The writer.</returns>
-    private StreamWriter Open(DateOnly day, int part)
+    /// <returns>True when the parts were moved; false when a file could not be deleted or moved (another program holds it, for example).</returns>
+    private bool DropOldestPart(DateOnly day)
     {
-        var name = part == 1 ? string.Create(CultureInfo.InvariantCulture, $"server-{day:yyyyMMdd}.log")
-            : string.Create(CultureInfo.InvariantCulture, $"server-{day:yyyyMMdd}.{part}.log");
-        var stream = new FileStream(Path.Combine(_directory, name), FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        try
+        {
+            File.Delete(PathOf(day, 1));
+            for (var part = 2; part <= _filesPerDay; part++)
+            {
+                if (File.Exists(PathOf(day, part)))
+                    File.Move(PathOf(day, part), PathOf(day, part - 1));
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Opens a part of a day's log and counts the bytes it already holds.</summary>
+    /// <param name="day">The day.</param>
+    /// <param name="part">The part, from 1.</param>
+    /// <param name="append">True to append to the file; false to empty it first.</param>
+    /// <returns>The writer.</returns>
+    private StreamWriter Open(DateOnly day, int part, bool append)
+    {
+        var stream = new FileStream(PathOf(day, part), append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+        _written = stream.Length;
         return new StreamWriter(stream) { AutoFlush = true };
     }
+
+    /// <summary>Gives the path of a part of a day's log.</summary>
+    /// <param name="day">The day.</param>
+    /// <param name="part">The part, from 1; the first part has no number in its name.</param>
+    /// <returns>The path.</returns>
+    private string PathOf(DateOnly day, int part) => Path.Combine(_directory, part == 1
+        ? string.Create(CultureInfo.InvariantCulture, $"server-{day:yyyyMMdd}.log")
+        : string.Create(CultureInfo.InvariantCulture, $"server-{day:yyyyMMdd}.{part}.log"));
 
     /// <summary>Gives the four-letter tag a level has in the log.</summary>
     /// <param name="level">The log level.</param>
