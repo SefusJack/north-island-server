@@ -21,13 +21,29 @@ public readonly record struct TriggerReach(
     public const int NpcClick = 170;
 
     /// <summary>
-    /// The reach of the triggers the client sends while the player walks or for anything on the screen, px on the x axis: the game screen's
-    /// width. The client clicks a door anywhere on the screen, and while walking the server holds the walk's goal, which was a point on the screen.
+    /// The reach of the triggers the client sends while the player walks (20/2 near an NPC, 20/8 a door walked onto), px on each axis. The
+    /// server holds the goal of the player's last walk, and the client walks at most 40 cells of 20 px each way from where it stands
+    /// (CellDistances::kReach), so the player stands within 820 px (40 cells plus the cell it stands in) of that goal; twice that covers a
+    /// walk sent while the last one was still under way, as <see cref="TravelOptions.WalkReachPixels"/> does.
     /// </summary>
-    public const int ScreenX = 800;
+    public const int Walk = 2 * (40 + 1) * 20; // twice 40 cells plus one, of 20 px each
 
-    /// <summary>The reach of those triggers on the y axis, px: the game screen's height.</summary>
-    public const int ScreenY = 600;
+    /// <summary>
+    /// The reach of a door clicked (20/4), px on each axis. The client clicks a door anywhere in its view, which grows with its window and
+    /// its zoom (each of the ten steps out adds a twentieth of the window on each axis), so no screen size bounds it; this bound is kept
+    /// independent of the window and generous: a 4K window (3840 px) zoomed all the way out shows 5760 px, so a door in it is at most
+    /// 2880 px from the player in its middle, who stands within 820 px of the walk goal the server holds.
+    /// </summary>
+    public const int DoorClick = 4096; // px: 2880 + 820 = 3700, rounded up to a power of two for margin
+
+    /// <summary>
+    /// The reach of every trigger but an NPC click, px on the x axis: the larger of <see cref="Walk"/> and <see cref="DoorClick"/>, as
+    /// EventEngine checks doors and walk-time NPC triggers by one reach.
+    /// </summary>
+    public const int ScreenX = Walk > DoorClick ? Walk : DoorClick;
+
+    /// <summary>The reach of those triggers on the y axis, px: as <see cref="ScreenX"/>, since walks and the view grow on both axes.</summary>
+    public const int ScreenY = ScreenX;
 
     /// <summary>The size of an event walk record of an NPC, bytes.</summary>
     private const int WalkSize = 92;
