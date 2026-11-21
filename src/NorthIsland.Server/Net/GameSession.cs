@@ -342,6 +342,44 @@ public sealed class GameSession : IAsyncDisposable
         return held.Held;
     }
 
+    /// <summary>The longest time <see cref="TryExclusiveFrom"/> waits for another session's gate, in milliseconds.</summary>
+    public const int OtherGateWaitMs = 50;
+
+    /// <summary>
+    /// Holds this session's state for work that runs under another session's gate and changes this player too: a packet of one player that
+    /// changes another player's gold, bag, pets or lists (a trade, a stall buy, a payout), or the second gate of a timer.
+    /// <para>
+    /// The rule: work that holds one session's gate never waits on <see cref="ExclusiveAsync"/> for another one, since the other session's work
+    /// may hold that gate and wait for the first (two players trading at once would wait for each other for ever). It takes the other gate here,
+    /// waiting at most <see cref="OtherGateWaitMs"/>, and when that fails it refuses the change with the handler's own "failed" answer and a log
+    /// line; the player tries again. A session whose connection ended (<see cref="Closing"/>) is refused as well: its character is saved for the
+    /// last time and must not change any more. Check the other player's state (gold, counts, pets) after this returns, not before.
+    /// </para>
+    /// </summary>
+    /// <param name="holder">The session whose gate the caller holds; when it is this session the caller already holds this gate.</param>
+    /// <param name="held">The hold when taken (none when <paramref name="holder"/> is this session); dispose it to let the next work in.</param>
+    /// <returns>True when this session's state may be changed.</returns>
+    public bool TryExclusiveFrom(GameSession holder, out Exclusive held)
+    {
+        held = default;
+        if (ReferenceEquals(holder, this)) // the caller already holds this gate, which is not reentrant
+            return true;
+        if (!_exclusive.Wait(OtherGateWaitMs))
+            return false;
+        held = new Exclusive(_exclusive);
+        if (!Closing)
+            return true;
+        held.Dispose();
+        held = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Marks the session closing once its connection ended, so that later work of other sessions leaves its state alone; called under its gate
+    /// before the disconnect cleanup and the final save.
+    /// </summary>
+    internal void MarkEnded() => Volatile.Write(ref _closing, 1);
+
     /// <summary>A hold on a session's state, from <see cref="ExclusiveAsync"/> or <see cref="TryExclusive"/>.</summary>
     /// <param name="gate">The session's gate, or null for no hold.</param>
     public readonly struct Exclusive(SemaphoreSlim? gate) : IDisposable

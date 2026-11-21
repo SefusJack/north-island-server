@@ -179,7 +179,9 @@ public sealed class GameListener(
 
     /// <summary>
     /// Runs a session and, when it ends, aborts its trades, closes its stalls, removes it from the world, saves its account and releases its claim
-    /// on the account and its place in the connection counts; each step runs even when an earlier one throws.
+    /// on the account and its place in the connection counts; each step runs even when an earlier one throws. The cleanup and the save run under
+    /// the session's gate, which no packet of its own holds any more: a timer or another player's packet that changes the character finishes
+    /// first, and the session is marked ended so that none changes it after the save (<see cref="GameSession.TryExclusiveFrom"/>).
     /// </summary>
     /// <param name="session">The session to run.</param>
     /// <param name="address">The client address it is counted under.</param>
@@ -198,8 +200,10 @@ public sealed class GameListener(
             }
         }
 
+        var exclusive = await session.ExclusiveAsync().ConfigureAwait(false); // no packet of its own runs now: waits for timers and other players
         try
         {
+            session.MarkEnded();
             Cleanup(session, "trade abort", () => TradeHandlers.Abort(session));
             Cleanup(session, "pet trade abort", () => PetTradeHandlers.Abort(session));
             Cleanup(session, "stall close", () =>
@@ -225,6 +229,7 @@ public sealed class GameListener(
                     _logger.LogError(ex, "[{Session}] saving {Account} failed", session.Id, account.Name);
                 }
             }
+            exclusive.Dispose();
             accountSessions.Release(session);
             Leave(address);
             _sessions.TryRemove(session.Id, out _);
