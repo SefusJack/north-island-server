@@ -17,10 +17,13 @@ public static class BagLocks
     /// <summary>Tells what a bag slot is committed to, for the log of a refusal.</summary>
     /// <param name="session">The player's session.</param>
     /// <param name="slot">The bag slot.</param>
+    /// <param name="ignoreTrade">
+    /// When true, the player's own offer in an open item trade does not count, so the trade can ask what else holds a slot it is offered in.
+    /// </param>
     /// <returns>A short reason such as "offered in a trade", or null when the slot is free to change.</returns>
-    public static string? LockedBy(GameSession session, byte slot)
+    public static string? LockedBy(GameSession session, byte slot, bool ignoreTrade = false)
     {
-        if (session.Trades.Items is { Closed: false } trade && trade.Of(session).Stacks.Exists(s => s.Slot == slot))
+        if (!ignoreTrade && session.Trades.Items is { Closed: false } trade && trade.Of(session).Stacks.Exists(s => s.Slot == slot))
             return "offered in a trade";
         if (session.Stalls.Items?.Prices.ContainsKey(slot) == true)
             return "priced in the item stall";

@@ -397,7 +397,7 @@ public sealed class TradeHandlers(
 
     /// <summary>
     /// Tells why a bag stack cannot be offered in a trade: there is none, its item cannot be given, it is the ridden vehicle, or the slot is
-    /// committed somewhere other than this trade (<see cref="LockedOutsideTrade"/>).
+    /// committed somewhere other than this trade (<see cref="BagLocks.LockedBy"/> leaving out the player's own trade offer).
     /// </summary>
     /// <param name="session">The owner's session.</param>
     /// <param name="stack">The stack in the offered slot, or null when the slot is empty.</param>
@@ -406,23 +406,7 @@ public sealed class TradeHandlers(
         stack is null ? "the slot is empty"
             : Bag.IsNoTrade(items, stack) ? "the item cannot be traded"
                 : session.Vehicle?.BagSlot == stack.Slot ? "the stack is the ridden vehicle"
-                    : LockedOutsideTrade(session, stack.Slot);
-
-    /// <summary>
-    /// Tells what a bag slot is committed to besides the player's own trade offer, which <see cref="BagLocks.LockedBy"/> reports first and so
-    /// would hide the rest: priced in the item stall or the utensil stall, loaded for the pet express, or listed on a house shelf or vending
-    /// machine.
-    /// </summary>
-    /// <param name="session">The owner's session.</param>
-    /// <param name="slot">The bag slot.</param>
-    /// <returns>The reason for the log, or null when nothing else holds the slot.</returns>
-    private static string? LockedOutsideTrade(GameSession session, byte slot) =>
-        session.Stalls.Items?.Prices.ContainsKey(slot) == true ? "the stack is priced in the item stall"
-            : session.Stalls.Utensils?.Prices.ContainsKey(slot) == true ? "the stack is priced in the utensil stall"
-                : session.PetJobs.Express?.Stacks.Exists(s => s.Slot == slot) == true ? "the stack is loaded for the pet express"
-                    : session.ActiveCharacter is { } c && c.Furniture.Exists(
-                        f => f.ItemId is HomeShopHandlers.Shelf or HomeShopHandlers.VendingMachine && f.Stock.Exists(s => s.BagCell == slot))
-                        ? "the stack is listed on a house shelf"
+                    : BagLocks.LockedBy(session, stack.Slot, ignoreTrade: true) is { } why ? "the stack is " + why
                         : null;
 
     /// <summary>Describes stacks as item names with counts, for the log.</summary>
