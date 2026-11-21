@@ -19,8 +19,8 @@ public sealed class VehicleHandlers(
 {
     /// <summary>
     /// Gives why a vehicle may not be placed or boarded where the player stands (the client's placingRefusal): in or watching a battle, in a
-    /// house, in a Quiz Zone, on a map or scene type that takes no vehicle, or when the vehicle is worn out (its wear has reached the most it
-    /// can take; it must be repaired first).
+    /// house, in a Quiz Zone, on a map or scene type (that of its source map for an instance copy) that takes no vehicle, or when the vehicle
+    /// is worn out (its wear has reached the most it can take; it must be repaired first).
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="c">The player's character.</param>
@@ -29,10 +29,11 @@ public sealed class VehicleHandlers(
     private string? UseRefusal(GameSession session, Character c, BagItem? vehicle)
     {
         var o = options.Value.Vehicles;
+        var sceneType = (int)maps.SceneType(maps.SourceMapId(c.MapId));
         return session.Battle is not null || session.Watching is not null ? "in a battle"
             : TentHandlers.IsHouseMap(c.MapId) ? "in a house"
                 : EventArenas.IsQuizMap(c.MapId) || Array.IndexOf(o.NoVehicleMaps, c.MapId) >= 0
-                    || Array.IndexOf(o.NoVehicleSceneTypes, (int)maps.SceneType(c.MapId)) >= 0 ? $"no vehicles on map {c.MapId}"
+                    || Array.IndexOf(o.NoVehicleSceneTypes, sceneType) >= 0 ? $"no vehicles on map {c.MapId}"
                     : vehicle is null || items[vehicle.ItemId] is not { } record ? "not in the bag"
                         : vehicle.Used >= VehicleCareHandlers.MaxWear(record) ? "worn out"
                             : null;

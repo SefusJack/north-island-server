@@ -7,14 +7,12 @@ namespace NorthIsland.Server.Features.Travel;
 
 /// <summary>Serves the trips of the village robot, the submarine and the landing craft, ridden as vehicles.</summary>
 /// <param name="routes">The destinations of each vehicle kind.</param>
-/// <param name="maps">The map data.</param>
 /// <param name="world">The online sessions and maps.</param>
 /// <param name="travel">The teleport rule.</param>
 /// <param name="options">The vehicle options; they hold the fuel a trip costs.</param>
 /// <param name="logger">The logger.</param>
 public sealed class TransmitHandlers(
     TransmitRoutes routes,
-    MapData maps,
     WorldState world,
     TravelRules travel,
     IOptions<VehicleFeatureOptions> options,
@@ -39,7 +37,7 @@ public sealed class TransmitHandlers(
         var target = earth ? Earth(session, c) : routes.Route(kind, index);
         string? refusal = kind == 0 ? "not riding a robot, submarine or landing craft"
             : target is null ? $"no place {index} for kind {kind}"
-                : kind == 2 && (maps.SceneType(c.MapId) == 14) != (index == 1) ? "the submarine's pick does not fit the scene" // 2 submarine
+                : kind == 2 && travel.IsSea(c.MapId) != (index == 1) ? "the submarine's pick does not fit the scene" // 2 submarine
                     : travel.LeaveRefusal(session, c)
                         ?? (travel.IsBarred(target.MapId) ? $"map {target.MapId} cannot be reached this way" : null);
         if (refusal is not null)

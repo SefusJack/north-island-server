@@ -51,6 +51,18 @@ public sealed partial class BattleHandlers(
     /// <summary>The seconds players have to choose their commands in a round.</summary>
     private const int CommandSeconds = 20;
 
+    /// <summary>How often a join that came while a round was played looks for the next command phase, in milliseconds.</summary>
+    private const int JoinPollMs = 250;
+
+    /// <summary>
+    /// The longest a join that came while a round was played waits for the next command phase, in milliseconds: longer than any round's
+    /// actions take to play.
+    /// </summary>
+    private const int JoinWaitMs = 60_000; // 60 s
+
+    /// <summary>The sessions whose join waits for the next command phase of the battle they asked to join; one wait each.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<GameSession, Battle> _waitingJoins = new();
+
     /// <summary>Hooks the battle service into the world: leaving players and players meeting on a map.</summary>
     internal void Start()
     {
@@ -280,7 +292,11 @@ public sealed partial class BattleHandlers(
         logger.LogInformation("[{Session}] {Name} watches the battle of {Leader}", session.Id, session.ActiveCharacter!.Name, battle.Player.Name);
     }
 
-    /// <summary>Lets a player join the fight another player is in, on that player's side, while its players choose their commands.</summary>
+    /// <summary>
+    /// Lets a player join the fight another player is in, on that player's side, while its players choose their commands. A join that comes
+    /// while a round is played (most of a battle's time) waits for the next command phase (<see cref="JoinAtCommandPhaseAsync"/>) instead
+    /// of being refused.
+    /// </summary>
     /// <param name="session">The session of the joining player.</param>
     /// <param name="target">The session of the player whose fight is joined.</param>
     private void JoinFight(GameSession session, GameSession target)
@@ -292,6 +308,19 @@ public sealed partial class BattleHandlers(
         Fighter? pet;
         lock (battle.Lock)
         {
+            if (battle.Phase == BattlePhase.Acting && targetFighter is not null)
+            {
+                if (_waitingJoins.TryAdd(session, battle))
+                {
+                    _ = JoinAtCommandPhaseAsync(session, target, battle);
+                    logger.LogInformation("[{Session}] join the battle of {Target}: waits for the next command phase", session.Id,
+                        target.ActiveCharacter?.Name);
+                }
+                else
+                    logger.LogInformation("[{Session}] join the battle of {Target}: a join already waits", session.Id,
+                        target.ActiveCharacter?.Name);
+                return;
+            }
             if (battle.Phase != BattlePhase.Command || targetFighter is null
                 || cols.Where(c => !battle.Players.Exists(p => p.Side == targetFighter.Side && p.Col == c && !p.Left)).ToList() is not [var col, ..])
             {
@@ -317,6 +346,47 @@ public sealed partial class BattleHandlers(
         HideJoiner(session, battle);
         logger.LogInformation("[{Session}] {Name} joins the battle of {Target} at ({Row},{Col})", session.Id, joined.Name,
             target.ActiveCharacter?.Name, joined.Row, joined.Col);
+    }
+
+    /// <summary>
+    /// Waits for the next command phase of a battle a player asked to join while a round was played, then joins it under the joiner's
+    /// session gate, if the joiner is still free and on the map of the player they join, and that player still fights in the battle. A
+    /// battle that ends or leaves the target meanwhile is answered as over; any other change drops the join.
+    /// </summary>
+    /// <param name="session">The session of the joining player.</param>
+    /// <param name="target">The session of the player whose fight is joined.</param>
+    /// <param name="battle">The battle the target was in when the join came.</param>
+    /// <returns>A task that completes when the join is done or dropped.</returns>
+    private async Task JoinAtCommandPhaseAsync(GameSession session, GameSession target, Battle battle)
+    {
+        try
+        {
+            for (var waited = 0; battle.Phase == BattlePhase.Acting && waited < JoinWaitMs; waited += JoinPollMs)
+                await Task.Delay(JoinPollMs).ConfigureAwait(false);
+            using var exclusive = await session.ExclusiveAsync().ConfigureAwait(false); // the join changes the joiner's state
+            var over = battle.Phase == BattlePhase.Over || !ReferenceEquals(target.Battle, battle);
+            var why = over ? "the battle is over"
+                : session.State != SessionState.InWorld || session.LeavingGame || session.ActiveCharacter is not { } c ? "left the world"
+                    : !IsFree(session) ? "busy"
+                        : target.ActiveCharacter?.MapId != c.MapId ? "no longer on the map of the battle"
+                            : battle.Phase != BattlePhase.Command ? "no command phase came"
+                                : null;
+            _waitingJoins.TryRemove(session, out _); // before the join, which may wait again when the round has just begun to play
+            if (why is null)
+            {
+                JoinFight(session, target);
+                return;
+            }
+            logger.LogInformation("[{Session}] join the battle of {Target} after waiting: refused ({Why})", session.Id,
+                target.ActiveCharacter?.Name, why);
+            if (over)
+                session.Send(new PacketWriter(Action11.Code, Action11.JoinBattle).U8(4).ToArray()); // 4: the battle is over
+        }
+        catch (Exception ex)
+        {
+            _waitingJoins.TryRemove(session, out _);
+            logger.LogError(ex, "[{Session}] join the battle of {Target} after waiting failed", session.Id, target.ActiveCharacter?.Name);
+        }
     }
 
     /// <summary>Hides a joining player from the other players on their map.</summary>
