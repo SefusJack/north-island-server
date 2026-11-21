@@ -29,10 +29,6 @@ public sealed class WorldState(
     /// <returns>True when online.</returns>
     public bool IsOnline(int playerId) => _online.ContainsKey(playerId);
 
-    /// <summary>The accounts of the online players.</summary>
-    /// <returns>The accounts.</returns>
-    public IReadOnlyList<Data.Account> OnlineAccounts() => [.. _online.Values.Select(s => s.Account).OfType<Data.Account>()];
-
     /// <summary>Finds the session of an online player.</summary>
     /// <param name="playerId">The player id.</param>
     /// <returns>The session, or null when offline.</returns>

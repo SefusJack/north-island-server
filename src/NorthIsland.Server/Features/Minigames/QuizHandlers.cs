@@ -344,7 +344,7 @@ public sealed class QuizHandlers(
 
     /// <summary>
     /// Holding the player's session gate, does the work given (a prize goes in the bag between packets), then closes their quiz screen and
-    /// sends them back to the lobby when they are still in the Q&amp;A hall.
+    /// sends them back to the lobby when they are still in the Q&amp;A hall and their connection has not ended.
     /// </summary>
     /// <param name="session">The player's session.</param>
     /// <param name="before">Work done first under the gate, such as giving the prize; null for none.</param>
@@ -352,7 +352,8 @@ public sealed class QuizHandlers(
     {
         using (await session.ExclusiveAsync().ConfigureAwait(false))
         {
-            if (session.State != SessionState.InWorld || session.ActiveCharacter?.MapId != QuizMapId)
+            // a session whose connection ended is saved for the last time: no prize and no move any more
+            if (session.Closing || session.State != SessionState.InWorld || session.ActiveCharacter?.MapId != QuizMapId)
                 return;
             before?.Invoke();
             session.Send(QuizMessages.Close());

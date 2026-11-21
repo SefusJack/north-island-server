@@ -92,7 +92,10 @@ public sealed class ServerOptions
     public int OutboxPackets { get; set; } = 8192;
 
     /// <summary>
-    /// The failed logins of one account name, or from one address, that lock out further logins for <see cref="LoginLockoutSeconds"/>.
+    /// The failed logins that lock out further logins for <see cref="LoginLockoutSeconds"/>: of one account name from one address (that name is
+    /// locked out for that address only), or from one address over any names (the address is locked out; not for loopback addresses). Once a name
+    /// has this many failures over all addresses together, each of its logins only waits 1 second before the password is checked; it is never
+    /// locked out for every address.
     /// </summary>
     public int LoginFailuresBeforeLockout { get; set; } = 10;
 
@@ -108,7 +111,10 @@ public sealed class ServerOptions
     /// <summary>The size in megabytes at which a log file is closed and the day's next part begun.</summary>
     public int LogFileMegabytes { get; set; } = FileLoggerProvider.DefaultFileMegabytes;
 
-    /// <summary>The most log files (parts) written per day; once the last is full, the day's further lines are dropped.</summary>
+    /// <summary>
+    /// The most log files (parts) kept per day; once the last is full, the day's oldest part is deleted and the others are renumbered, so that the
+    /// day's newest lines are kept and no line is dropped.
+    /// </summary>
     public int LogFilesPerDay { get; set; } = FileLoggerProvider.DefaultFilesPerDay;
 
     /// <summary>Account names, separated by commas, that are made GMs when they log in; empty for none.</summary>

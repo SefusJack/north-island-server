@@ -99,7 +99,10 @@ public sealed class GameSession : IAsyncDisposable
     /// <summary>True once the session is closing: the router drops its packets and nothing more is sent.</summary>
     public bool Closing => Volatile.Read(ref _closing) != 0;
 
-    /// <summary>Limits the log lines about the session's bad packets (unhandled, malformed, failed, junk skipped): 20 lines per 10 seconds.</summary>
+    /// <summary>
+    /// Limits the session's problem log lines: its bad packets (unhandled, malformed, failed, junk skipped) and the refusals that a client can
+    /// repeat at will (from the login and item bag handlers); 20 lines per 10 seconds.
+    /// </summary>
     public LogBudget ProblemLog { get; } = new(20, 10 * MsPerSecond);
 
     /// <summary>The session id, unique while the server runs.</summary>

@@ -301,7 +301,10 @@ public sealed class GmCommands(
             : given < count ? $"{given} x {item.Name.Trim()} given; your bag is full." : $"{given} x {item.Name.Trim()} given.";
     }
 
-    /// <summary>Handles <c>/level</c>: sets the level of the GM or of a named online player.</summary>
+    /// <summary>
+    /// Handles <c>/level</c>: sets the level of the GM or of a named online player, under that player's gate (<see
+    /// cref="GameSession.TryExclusiveFrom"/>, as the GM's packet holds the GM's gate).
+    /// </summary>
     /// <param name="session">The GM's session.</param>
     /// <param name="args">The command arguments: the level and an optional name.</param>
     /// <returns>The reply line.</returns>
@@ -310,8 +313,25 @@ public sealed class GmCommands(
         if (args.Length is < 1 or > 2 || !int.TryParse(args[0], NumberStyles.None, CultureInfo.InvariantCulture, out var level))
             return "Usage: /level <level> [name]";
         var target = args.Length == 2 ? Online(args[1]) : session;
-        if (target?.ActiveCharacter is not { } character)
+        if (target is null)
             return $"{args[1]} is not online.";
+        if (!target.TryExclusiveFrom(session, out var held))
+        {
+            logger.LogWarning("[{Session}] GM /level of {Target}: refused, the player is busy or leaving", session.Id, args[1]);
+            return $"{args[1]} is busy or leaving; try again.";
+        }
+        using (held)
+            return LevelHeld(target, level);
+    }
+
+    /// <summary>Sets the level of a player whose gate the caller holds, after checking it can be set.</summary>
+    /// <param name="target">The player's session.</param>
+    /// <param name="level">The new level.</param>
+    /// <returns>The reply line.</returns>
+    private string LevelHeld(GameSession target, int level)
+    {
+        if (target.ActiveCharacter is not { } character)
+            return "The player is not online.";
         if (formulas.Table is null)
             return "Formula.dat is not loaded.";
         var max = FormulaTable.MaxLevel(character.RebornCount);

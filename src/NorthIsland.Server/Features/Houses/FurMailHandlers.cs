@@ -99,18 +99,29 @@ public sealed class FurMailHandlers(
         }
         else
         {
-            if (BlocklistHandlers.Blocks(target.Character, myId))
+            var held = default(GameSession.Exclusive);
+            if (online is not null && !online.TryExclusiveFrom(session, out held)) // online with another character: its session saves the account
             {
-                BlocklistHandlers.Refuse(session, 2); // action
+                logger.LogWarning("[{Session}] {Name}: letter to {Target} refused, the target's account is busy or its connection ended", session.Id,
+                    c.Name, target.Character.Name);
+                session.Send(FurMailMessages.Result(1));
                 return;
             }
-            var capacity = options.Value.HouseLife.FurMailCapacity is > 0 and var set ? set : DefaultCapacity;
-            if (target.Character.FurMails.Count >= capacity)
+            using (held)
             {
-                session.Send(new PacketWriter(Action14.Code, Action14.MailboxFull).ToArray());
-                return;
+                if (BlocklistHandlers.Blocks(target.Character, myId))
+                {
+                    BlocklistHandlers.Refuse(session, 2); // action
+                    return;
+                }
+                var capacity = options.Value.HouseLife.FurMailCapacity is > 0 and var set ? set : DefaultCapacity;
+                if (target.Character.FurMails.Count >= capacity)
+                {
+                    session.Send(new PacketWriter(Action14.Code, Action14.MailboxFull).ToArray());
+                    return;
+                }
+                target.Character.FurMails.Add(new FurMail { SenderId = myId, SenderName = c.Name, Time = time, Text = text });
             }
-            target.Character.FurMails.Add(new FurMail { SenderId = myId, SenderName = c.Name, Time = time, Text = text });
             if (online is null)
                 await store.SaveAsync(target.Account).ConfigureAwait(false);
         }

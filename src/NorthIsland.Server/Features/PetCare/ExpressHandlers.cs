@@ -78,22 +78,30 @@ public sealed class ExpressHandlers(
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Called every second: when the trip is due, checks the stacks again, delivers them and ends the trip.</summary>
+    /// <summary>
+    /// Called every second under the sender's gate: when the trip is due, takes the target's gate, checks the stacks and the target's bag again,
+    /// delivers them and ends the trip. A target whose connection ended is not online any more: its character was saved for the last time.
+    /// </summary>
     /// <param name="session">The sender's session.</param>
     public void Tick(GameSession session)
     {
-        if (session.PetJobs.Express is not { } job || job.Due > GameClock.UtcNow || session.ActiveCharacter is not { } c)
+        if (session.Closing || session.PetJobs.Express is not { } job || job.Due > GameClock.UtcNow || session.ActiveCharacter is not { } c)
             return;
-        var refusal = Check(session, c, job.TargetId, job.Stacks);
-        if (refusal is null && world.SessionOf(job.TargetId) is { } target && target.ActiveCharacter is { } tc)
+        var target = world.SessionOf(job.TargetId);
+        var held = default(GameSession.Exclusive);
+        if (target is not null && !ReferenceEquals(target, session) && !target.TryExclusive(out held))
+            return; // the target is handling a packet: check and deliver on the next tick, without waiting in the ticker
+        using (held)
         {
-            if (!target.TryExclusive(out var held)) // the target is handling a packet: deliver on the next tick
-                return;
-            using (held)
+            (byte Code, ushort Item)? refusal = target is { Closing: true } ? (2, 0) : Check(session, c, job.TargetId, job.Stacks); // 2: not online
+            if (refusal is null && ReferenceEquals(world.SessionOf(job.TargetId), target) && target!.ActiveCharacter is { } tc)
                 Deliver(session, c, target, tc, job);
+            else
+            {
+                var (code, item) = refusal ?? (2, 0); // 2: the target is not online (it logged in again on another connection meanwhile)
+                session.Send(ExpressMessages.Error(code, item));
+            }
         }
-        else if (refusal is { } r)
-            session.Send(ExpressMessages.Error(r.Code, r.Item));
         Finish(session, job);
     }
 

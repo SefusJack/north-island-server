@@ -144,17 +144,10 @@ public sealed class PacketRouter(
         }
     }
 
-    /// <summary>Takes a line from the session's budget of bad-packet log lines, first logging how many lines the budget held back.</summary>
+    /// <summary>Takes a line from the session's budget of problem log lines, first logging how many lines the budget held back.</summary>
     /// <param name="session">The session.</param>
     /// <returns>True when the line may be logged.</returns>
-    private bool MayLog(GameSession session)
-    {
-        if (!session.ProblemLog.TryTake(out var dropped))
-            return false;
-        if (dropped > 0)
-            logger.LogWarning("[{Session}] {Count} bad-packet log line(s) not logged", session.Id, dropped);
-        return true;
-    }
+    private bool MayLog(GameSession session) => session.ProblemLog.TryTake(logger, session.Id);
 
     /// <summary>Gives the hex of a bad packet for the log, cut after <see cref="MaxDumpBytes"/> bytes.</summary>
     /// <param name="payload">The packet.</param>
