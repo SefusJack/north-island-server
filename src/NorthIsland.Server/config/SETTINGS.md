@@ -120,7 +120,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 
 ### Rows of `LevelDrops`
 
-Each row: Item = the item id that drops; MinLevel = the lowest monster level the row applies to; MaxLevel = the highest (0 means no upper bound); Percent = the chance in percent that a monster in the range drops the item. A monster rolls this table once, separately from its own list and the seasonal event table, and a Double Drop does not double it. The default bands follow the WLO Mobile guide; its drop rate is not known, so 0.5 is a guess.
+Each row: Item = the item id that drops; MinLevel = the lowest monster level the row applies to; MaxLevel = the highest (0 means no upper bound); Percent = the chance in percent that a monster in the range drops the item. A monster rolls this table once, separately from its own list and the seasonal event table, and a Double Drop does not double it. The default bands (50-69, 70-89, 90-109, 110+) follow the PC-era Alchemist Codex guide; the WLO Mobile guide puts the Book 3/4 split at 120 instead. No source gives the drop rate, so 0.5 is a guess.
 
 | Item | Name |
 |---|---|
