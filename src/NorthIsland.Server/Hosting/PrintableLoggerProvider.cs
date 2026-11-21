@@ -49,10 +49,13 @@ public sealed class PrintableLoggerProvider(
     private sealed class PrintableLogger(
         ILogger inner) : ILogger
     {
+        /// <inheritdoc/>
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
 
+        /// <inheritdoc/>
         public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
 
+        /// <inheritdoc/>
         public void Log<TState>(
             LogLevel logLevel,
             EventId eventId,

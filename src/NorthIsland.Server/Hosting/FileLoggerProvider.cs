@@ -60,8 +60,10 @@ public sealed class FileLoggerProvider : ILoggerProvider
         Directory.CreateDirectory(directory);
     }
 
+    /// <inheritdoc/>
     public ILogger CreateLogger(string categoryName) => new FileLogger(this, categoryName);
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         lock (_lock)
@@ -195,10 +197,13 @@ public sealed class FileLoggerProvider : ILoggerProvider
         FileLoggerProvider provider,
         string category) : ILogger
     {
+        /// <inheritdoc/>
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
+        /// <inheritdoc/>
         public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
+        /// <inheritdoc/>
         public void Log<TState>(
             LogLevel logLevel,
             EventId eventId,
