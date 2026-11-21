@@ -73,6 +73,30 @@ public sealed class ServerOptions
     /// <summary>True to log every packet in both directions.</summary>
     public bool LogPackets { get; set; }
 
+    /// <summary>The most game connections open at once; a connection over it is closed at once. 0 or less for no limit.</summary>
+    public int MaxConnections { get; set; } = 2000;
+
+    /// <summary>The most game connections open at once from one address; loopback addresses are not limited. 0 or less for no limit.</summary>
+    public int MaxConnectionsPerAddress { get; set; } = 10;
+
+    /// <summary>The seconds a connection has to log in, from when it connects or goes back to the login form; 0 or less for no limit.</summary>
+    public int LoginTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// The minutes a logged-in connection may send nothing before it is closed; 0 or less turns it off (the default: the client sends no
+    /// keep-alive, so a player who stands still sends nothing).
+    /// </summary>
+    public int IdleTimeoutMinutes { get; set; }
+
+    /// <summary>The most packets queued for one client; a client that lets more pile up (it stopped reading) is disconnected.</summary>
+    public int OutboxPackets { get; set; } = 8192;
+
+    /// <summary>The size in megabytes at which a log file is closed and the day's next part begun.</summary>
+    public int LogFileMegabytes { get; set; } = FileLoggerProvider.DefaultFileMegabytes;
+
+    /// <summary>The most log files (parts) written per day; once the last is full, the day's further lines are dropped.</summary>
+    public int LogFilesPerDay { get; set; } = FileLoggerProvider.DefaultFilesPerDay;
+
     /// <summary>Account names, separated by commas, that are made GMs when they log in; empty for none.</summary>
     public string GmAccounts { get; set; } = "";
 

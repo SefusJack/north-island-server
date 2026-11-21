@@ -29,30 +29,78 @@ public sealed class GameSession : IAsyncDisposable
     /// <summary>Cuts the received bytes into packets.</summary>
     private readonly FrameDecoder _decoder = new();
 
-    /// <summary>The encoded packets waiting to be written to the client.</summary>
-    private readonly Channel<byte[]> _outbox = Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
+    /// <summary>
+    /// The longest time the packets queued before a close (such as a kick) get to be written before the connection is closed anyway.
+    /// </summary>
+    private static readonly TimeSpan CloseFlushTime = TimeSpan.FromSeconds(2);
+
+    /// <summary>How often the login and idle timeouts are checked.</summary>
+    private static readonly TimeSpan WatchPeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>The milliseconds in a second.</summary>
+    private const long MsPerSecond = 1000;
+
+    /// <summary>The milliseconds in a minute.</summary>
+    private const long MsPerMinute = 60 * MsPerSecond;
+
+    /// <summary>The encoded packets waiting to be written to the client, at most <see cref="ServerOptions.OutboxPackets"/>.</summary>
+    private readonly Channel<byte[]> _outbox;
+
+    /// <summary>The most packets the outbox holds.</summary>
+    private readonly int _outboxPackets;
+
+    /// <summary>The milliseconds a connection has to log in; 0 or less for no limit.</summary>
+    private readonly long _loginTimeoutMs;
+
+    /// <summary>The milliseconds a logged-in connection may send nothing; 0 or less for no limit.</summary>
+    private readonly long _idleTimeoutMs;
+
+    /// <summary>Cancelled to stop the read and write loops and close the socket, at once or after the flush time of a close.</summary>
+    private readonly CancellationTokenSource _stop = new();
+
+    /// <summary>1 once the session is closing: its packets are no longer handled. Read and written with Interlocked.</summary>
+    private int _closing;
+
+    /// <summary>When the session connected or latest went back to the login form, in <see cref="Environment.TickCount64"/> milliseconds.</summary>
+    private long _loginPhaseSinceMs = Environment.TickCount64;
+
+    /// <summary>
+    /// When the latest bytes arrived from the client, in <see cref="Environment.TickCount64"/> milliseconds; read and written with Volatile.
+    /// </summary>
+    private long _lastReceiveMs = Environment.TickCount64;
 
     /// <summary>Creates a session for an accepted connection.</summary>
     /// <param name="id">The session id.</param>
     /// <param name="client">The accepted connection.</param>
     /// <param name="router">Dispatches the incoming packets.</param>
     /// <param name="logger">The session's logger.</param>
-    /// <param name="logPackets">True to log every packet.</param>
+    /// <param name="options">The server options: packet logging, the outbox size and the login and idle timeouts.</param>
     public GameSession(
         int id,
         TcpClient client,
         PacketRouter router,
         ILogger logger,
-        bool logPackets)
+        ServerOptions options)
     {
         _client = client;
         _stream = client.GetStream();
         _router = router;
         _logger = logger;
-        _logPackets = logPackets;
+        _logPackets = options.LogPackets;
+        _outboxPackets = Math.Max(1, options.OutboxPackets);
+        _outbox = Channel.CreateBounded<byte[]>(
+            new BoundedChannelOptions(_outboxPackets) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
+        _loginTimeoutMs = options.LoginTimeoutSeconds * MsPerSecond;
+        _idleTimeoutMs = options.IdleTimeoutMinutes * MsPerMinute;
         Id = id;
         RemoteEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
     }
+
+    /// <summary>True once the session is closing: the router drops its packets and nothing more is sent.</summary>
+    public bool Closing => Volatile.Read(ref _closing) != 0;
+
+    /// <summary>Limits the log lines about the session's bad packets (unhandled, malformed, failed, junk skipped): 20 lines per 10 seconds.</summary>
+    public LogBudget ProblemLog { get; } = new(20, 10 * MsPerSecond);
 
     /// <summary>The session id, unique while the server runs.</summary>
     public int Id { get; }
@@ -221,11 +269,54 @@ public sealed class GameSession : IAsyncDisposable
                 BitConverter.ToInt32(payload, 8)); // 8 value2
         if (_logPackets)
             _logger.LogInformation("[{Session}] S->C {Code} len={Length} | {Hex}", Id, CodeOf(payload, fromClient: false), payload.Length, Hex.Format(payload));
-        _outbox.Writer.TryWrite(FrameCodec.Encode(payload));
+        if (!_outbox.Writer.TryWrite(FrameCodec.Encode(payload)) && !Closing && Stop(TimeSpan.Zero))
+            _logger.LogWarning("[{Session}] {Packets} packets wait for the client, which stopped reading; disconnected", Id, _outboxPackets);
     }
 
-    /// <summary>Ends the outgoing queue; the writer then drains it and shuts the socket down.</summary>
-    public void Close() => _outbox.Writer.TryComplete();
+    /// <summary>
+    /// Closes the session: its later packets are no longer handled, what is queued (such as a kick) gets a short time to be written, then the
+    /// connection is closed whether or not the client read it.
+    /// </summary>
+    public void Close() => Stop(CloseFlushTime);
+
+    /// <summary>Restarts the time the session has to log in; called when it goes back to the login form.</summary>
+    public void RestartLoginTimer() => Volatile.Write(ref _loginPhaseSinceMs, Environment.TickCount64);
+
+    /// <summary>Marks the session closing, ends the outgoing queue and stops the loops and the socket after a time.</summary>
+    /// <param name="flush">The time the queued packets get to be written, counted from the first close; zero to close at once.</param>
+    /// <returns>True for the call that marked the session closing.</returns>
+    private bool Stop(TimeSpan flush)
+    {
+        var first = Interlocked.Exchange(ref _closing, 1) == 0;
+        _outbox.Writer.TryComplete();
+        try
+        {
+            if (flush > TimeSpan.Zero)
+            {
+                if (first) // a later close must not push the deadline back
+                    _stop.CancelAfter(flush);
+            }
+            else // cancelled on the thread pool: the caller may hold locks, and the cancellation closes the socket
+                ThreadPool.QueueUserWorkItem(static stop => Cancel(stop), _stop, preferLocal: false);
+        }
+        catch (ObjectDisposedException) // the session already ended
+        {
+        }
+        return first;
+    }
+
+    /// <summary>Cancels a session's stop token, ignoring a session that already ended.</summary>
+    /// <param name="stop">The stop token's source.</param>
+    private static void Cancel(CancellationTokenSource stop)
+    {
+        try
+        {
+            stop.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
 
     /// <summary>
     /// Held while one piece of work changes the player's state: each incoming packet, and the timers that change the bag outside packets (a
@@ -262,49 +353,67 @@ public sealed class GameSession : IAsyncDisposable
         public void Dispose() => gate?.Release();
     }
 
-    /// <summary>Reads and dispatches packets until the client disconnects or the token is cancelled.</summary>
+    /// <summary>
+    /// Reads and dispatches packets until the client disconnects, the session is closed or the token is cancelled; then gives the queued packets
+    /// a short time to be written and closes the socket.
+    /// </summary>
     /// <param name="ct">Stops the session.</param>
     public async Task RunAsync(CancellationToken ct)
     {
         _logger.LogInformation("[{Session}] connected from {Remote}", Id, RemoteEndPoint);
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, _stop.Token);
+        await using var closeSocket = cts.Token.Register(static client => ((TcpClient)client!).Client.Close(), _client).ConfigureAwait(false);
         var writer = WriteLoopAsync(cts.Token);
+        var watch = WatchAsync(cts.Token);
         try
         {
             await ReadLoopAsync(cts.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException)
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
         {
         }
         finally
         {
             _outbox.Writer.TryComplete();
+            cts.CancelAfter(CloseFlushTime); // a client that stopped reading cannot hold the writer
+            await Ended(writer).ConfigureAwait(false);
             await cts.CancelAsync().ConfigureAwait(false);
-            try
-            {
-                await writer.ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
-            {
-            }
+            await Ended(watch).ConfigureAwait(false);
             _logger.LogInformation("[{Session}] disconnected ({State}, account {Account})", Id, State, Account?.Name ?? "-");
         }
     }
 
-    /// <summary>Reads the connection, cuts the bytes into packets and dispatches each one, until the client closes it.</summary>
+    /// <summary>Waits for a loop of the session to end, ignoring how a closed connection or a cancellation ended it.</summary>
+    /// <param name="loop">The loop's task.</param>
+    private static async Task Ended(Task loop)
+    {
+        try
+        {
+            await loop.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Reads the connection, cuts the bytes into packets and dispatches each one, until the client closes it or the session is closed (the packets
+    /// after a close are not handled).
+    /// </summary>
     /// <param name="ct">Stops the loop.</param>
     private async Task ReadLoopAsync(CancellationToken ct)
     {
-        var buffer = new byte[8192];
-        while (true)
+        var buffer = new byte[8192]; // bytes read per socket read
+        while (!Closing)
         {
             var read = await _stream.ReadAsync(buffer, ct).ConfigureAwait(false);
             if (read == 0)
                 return;
+            Volatile.Write(ref _lastReceiveMs, Environment.TickCount64);
 
             var skippedBefore = _decoder.SkippedBytes;
             _decoder.Feed(buffer.AsSpan(0, read));
-            while (_decoder.NextPayload() is { } payload)
+            while (!Closing && _decoder.NextPayload() is { } payload)
             {
                 if (_logPackets)
                     _logger.LogInformation(
@@ -315,8 +424,36 @@ public sealed class GameSession : IAsyncDisposable
                         Hex.Format(payload));
                 await _router.DispatchAsync(this, payload).ConfigureAwait(false);
             }
-            if (_decoder.SkippedBytes != skippedBefore)
-                _logger.LogWarning("[{Session}] resync skipped {Bytes} byte(s)", Id, _decoder.SkippedBytes - skippedBefore);
+            if (_decoder.SkippedBytes != skippedBefore && ProblemLog.TryTake(out var dropped))
+                _logger.LogWarning("[{Session}] resync skipped {Bytes} byte(s){Dropped}", Id, _decoder.SkippedBytes - skippedBefore,
+                    dropped > 0 ? $" ({dropped} earlier bad-packet line(s) not logged)" : "");
+        }
+    }
+
+    /// <summary>
+    /// Closes the session when it has not logged in within the login timeout (counted from the connection or the latest return to the login
+    /// form), or when it is logged in and sent nothing for the idle timeout.
+    /// </summary>
+    /// <param name="ct">Stops the loop.</param>
+    private async Task WatchAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(WatchPeriod);
+        while (!Closing && await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+        {
+            var now = Environment.TickCount64;
+            if (State is SessionState.Connected or SessionState.AwaitLogin)
+            {
+                if (_loginTimeoutMs > 0 && now - Volatile.Read(ref _loginPhaseSinceMs) >= _loginTimeoutMs)
+                {
+                    _logger.LogInformation("[{Session}] did not log in within {Seconds} s; disconnected", Id, _loginTimeoutMs / MsPerSecond);
+                    Close();
+                }
+            }
+            else if (_idleTimeoutMs > 0 && now - Volatile.Read(ref _lastReceiveMs) >= _idleTimeoutMs)
+            {
+                _logger.LogInformation("[{Session}] sent nothing for {Minutes} min; disconnected", Id, _idleTimeoutMs / MsPerMinute);
+                Close();
+            }
         }
     }
 
@@ -345,6 +482,7 @@ public sealed class GameSession : IAsyncDisposable
     public ValueTask DisposeAsync()
     {
         _client.Dispose();
+        _stop.Dispose();
         return ValueTask.CompletedTask;
     }
 }

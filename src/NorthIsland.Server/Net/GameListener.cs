@@ -7,7 +7,10 @@ using Microsoft.Extensions.Options;
 
 namespace NorthIsland.Server.Net;
 
-/// <summary>Background service that accepts game connections and runs a session for each one, saving the account when it ends.</summary>
+/// <summary>
+/// Background service that accepts game connections and runs a session for each one, saving the account when it ends. A connection over the
+/// global cap or the cap of its address is closed at once.
+/// </summary>
 /// <param name="router">Dispatches the incoming packets of each session.</param>
 /// <param name="store">The account store.</param>
 /// <param name="world">The online sessions.</param>
@@ -33,6 +36,21 @@ public sealed class GameListener(
 
     /// <summary>The id given to the latest session.</summary>
     private int _lastSessionId;
+
+    /// <summary>The open game connections, by client address.</summary>
+    private readonly ConcurrentDictionary<IPAddress, int> _byAddress = new();
+
+    /// <summary>The open game connections; changed with Interlocked.</summary>
+    private int _open;
+
+    /// <summary>The connections refused since the latest refusal that was logged.</summary>
+    private int _refusedUnlogged;
+
+    /// <summary>When a refusal was latest logged, in <see cref="Environment.TickCount64"/> milliseconds.</summary>
+    private long _refusalLoggedMs = long.MinValue / 2; // long ago
+
+    /// <summary>The milliseconds between two log lines about refused connections.</summary>
+    private const long RefusalLogMs = 10_000;
 
     /// <summary>Completed with the local endpoint once the listener is listening.</summary>
     private readonly TaskCompletionSource<IPEndPoint> _bound = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -62,14 +80,21 @@ public sealed class GameListener(
                     await AcceptFailedAsync(_logger, ex, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
+                var address = AddressOf(client);
+                if (!TryAdmit(address))
+                {
+                    Refused(address);
+                    client.Dispose();
+                    continue;
+                }
                 client.NoDelay = true;
                 var session = new GameSession(
                     Interlocked.Increment(ref _lastSessionId),
                     client,
                     router,
                     loggers.CreateLogger<GameSession>(),
-                    _options.LogPackets);
-                _sessions[session.Id] = RunSessionAsync(session, stoppingToken);
+                    _options);
+                _sessions[session.Id] = RunSessionAsync(session, address, stoppingToken);
             }
         }
         catch (OperationCanceledException)
@@ -97,13 +122,69 @@ public sealed class GameListener(
         await Task.Delay(TimeSpan.FromMilliseconds(100), ct).ConfigureAwait(false);
     }
 
+    /// <summary>Gives the client address of a connection, an IPv4 address mapped to IPv6 as IPv4.</summary>
+    /// <param name="client">The connection.</param>
+    /// <returns>The address; <see cref="IPAddress.None"/> when it is not known.</returns>
+    private static IPAddress AddressOf(TcpClient client)
+    {
+        var address = (client.Client.RemoteEndPoint as IPEndPoint)?.Address ?? IPAddress.None;
+        return address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+    }
+
+    /// <summary>Counts a new connection when it stays within the global cap and the cap of its address (loopback addresses have none).</summary>
+    /// <param name="address">The client address.</param>
+    /// <returns>True when the connection is counted and may run.</returns>
+    private bool TryAdmit(IPAddress address)
+    {
+        if (Interlocked.Increment(ref _open) > _options.MaxConnections && _options.MaxConnections > 0)
+        {
+            Interlocked.Decrement(ref _open);
+            return false;
+        }
+        var count = _byAddress.AddOrUpdate(address, 1, static (_, n) => n + 1);
+        if (count > _options.MaxConnectionsPerAddress && _options.MaxConnectionsPerAddress > 0 && !IPAddress.IsLoopback(address))
+        {
+            Leave(address);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Uncounts a connection that ended or was refused at its address and in the global count.</summary>
+    /// <param name="address">The client address.</param>
+    private void Leave(IPAddress address)
+    {
+        Interlocked.Decrement(ref _open);
+        while (_byAddress.TryGetValue(address, out var n))
+        {
+            if (n <= 1 ? _byAddress.TryRemove(new KeyValuePair<IPAddress, int>(address, n)) : _byAddress.TryUpdate(address, n - 1, n))
+                return;
+        }
+    }
+
+    /// <summary>Logs a refused connection, at most one line per 10 seconds with the number refused meanwhile.</summary>
+    /// <param name="address">The client address.</param>
+    private void Refused(IPAddress address)
+    {
+        var unlogged = Interlocked.Increment(ref _refusedUnlogged);
+        var now = Environment.TickCount64;
+        if (now - _refusalLoggedMs < RefusalLogMs)
+            return;
+        _refusalLoggedMs = now;
+        Interlocked.Exchange(ref _refusedUnlogged, 0);
+        _logger.LogWarning(
+            "Connection from {Address} refused: {Open} connection(s) open (cap {Max}, {PerAddress} per address); {Count} refused since the last line",
+            address, Volatile.Read(ref _open), _options.MaxConnections, _options.MaxConnectionsPerAddress, unlogged);
+    }
+
     /// <summary>
     /// Runs a session and, when it ends, aborts its trades, closes its stalls, removes it from the world, saves its account and releases its claim
-    /// on the account; each step runs even when an earlier one throws.
+    /// on the account and its place in the connection counts; each step runs even when an earlier one throws.
     /// </summary>
     /// <param name="session">The session to run.</param>
+    /// <param name="address">The client address it is counted under.</param>
     /// <param name="ct">Cancels the session.</param>
-    private async Task RunSessionAsync(GameSession session, CancellationToken ct)
+    private async Task RunSessionAsync(GameSession session, IPAddress address, CancellationToken ct)
     {
         await using (session.ConfigureAwait(false))
         {
@@ -145,6 +226,7 @@ public sealed class GameListener(
                 }
             }
             accountSessions.Release(session);
+            Leave(address);
             _sessions.TryRemove(session.Id, out _);
         }
     }
