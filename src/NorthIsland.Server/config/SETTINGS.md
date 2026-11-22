@@ -75,6 +75,7 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `ComboRebornLevelBonus` | The levels a fighter counts per rebirth on top of its level for the combination odds |
 | `ComboDamageBonusPercent` | The percent added to the damage of every member of a combination; 0 is the plain sum |
 | `DefeatedMonsterHideSeconds` | How many seconds a monster that was beaten stays hidden on the map |
+| `PersonalRoamingMonsters` | True to give each player their own respawn of a roaming monster: fighting it hides it only from the players in that fight, and a team member waiting for it to come back stays out of the team's fight against it; anyone may still join a fight against it with the join cursor. Stationary monsters, instances and monsters that count toward an instance goal always share one respawn. False (default) shares every respawn |
 | `BattleImmunitySeconds` | How many seconds after a battle a player cannot be drawn into a new fight |
 | `MonsterGoldRewards` | True when winning a battle also pays gold |
 | `GoldPerLevelMin` | The lowest gold a monster pays per level; the roll starts at level × this (0.1 gives a level 100 monster at least 10) |

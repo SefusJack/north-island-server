@@ -19,6 +19,7 @@
     "ComboRebornLevelBonus": 100,
     "ComboDamageBonusPercent": 0,
     "DefeatedMonsterHideSeconds": 30,
+    "PersonalRoamingMonsters": false,
     "BattleImmunitySeconds": 5,
     "MonsterGoldRewards": false,
     "GoldPerLevelMin": 0.1,
