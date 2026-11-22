@@ -178,6 +178,7 @@ public sealed class FieldEncounters
             if (_npcs[(ushort)npc.NpcId] is not { IsMonster: true }
                 || !scene.EventsOf(npc).Any(e => e.IsFieldMonster)
                 || _world.MonsterIsOut(character.MapId, role)
+                || _world.MonsterIsOutFor(character.MapId, role, session.Account!.LoginId)
                 || session.HiddenNpcs.TryGetValue((character.MapId, role), out var hidden) && hidden > now
                 || session.NpcStates.TryGetValue(role, out var state) && state is 2 or 4)
                 continue;

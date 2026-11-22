@@ -78,6 +78,12 @@ public sealed class BattleOptions
     /// <summary>How many seconds a monster that was beaten stays hidden on the map.</summary>
     public int DefeatedMonsterHideSeconds { get; set; } = 30;
 
+    /// <summary>
+    /// True when the fight against a roaming monster takes it out of play only for the players in that fight, so everyone has their own respawn
+    /// of it; stationary monsters, instances and monsters that count toward an instance goal always share one.
+    /// </summary>
+    public bool PersonalRoamingMonsters { get; set; }
+
     /// <summary>How many seconds after a battle a player cannot be drawn into a new fight.</summary>
     public int BattleImmunitySeconds { get; set; } = 5;
 

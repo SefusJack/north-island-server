@@ -196,8 +196,8 @@ public sealed class NpcWander(
     }
 
     /// <summary>
-    /// Finds the nearest player the NPC may chase: free, not a team member, not hiding it, not in a touch cooldown or
-    /// protected, and within the chase radius.
+    /// Finds the nearest player the NPC may chase: free, not a team member, not hiding it or waiting for their own respawn of it,
+    /// not in a touch cooldown or protected, and within the chase radius.
     /// </summary>
     /// <param name="w">The roaming NPC.</param>
     /// <param name="map">The map id.</param>
@@ -224,7 +224,8 @@ public sealed class NpcWander(
                 || s.ArrivedUtc.AddSeconds(options.Value.ArrivalGraceSeconds) > now
                 || s.HiddenNpcs.TryGetValue((map, w.Role), out var hidden) && hidden > now
                 || s.TouchCooldown.TryGetValue((map, w.Role), out var cooldown) && cooldown > now
-                || s.Encounters.Immune(now))
+                || s.Encounters.Immune(now)
+                || s.Account is { } player && world.MonsterIsOutFor(map, w.Role, player.LoginId))
                 continue;
             var distance = Math.Sqrt((c.X - x) * (c.X - x) + (c.Y - y) * (c.Y - y));
             if (distance <= options.Value.ChaseRadius && (best is null || distance < best.Value.Item2))
