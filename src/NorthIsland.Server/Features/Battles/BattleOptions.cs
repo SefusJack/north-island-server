@@ -174,6 +174,18 @@ public sealed class BattleOptions
     /// <summary>Which control and debuff statuses can be on an enemy at the same time: one of each kind, or one in all.</summary>
     public DebuffStacking DebuffStacking { get; set; }
 
+    /// <summary>The chance in percent that a control or Seal lands on an enemy whose Wisdom equals the caster's Intelligence.</summary>
+    public double StatusChanceBasePercent { get; set; } = 50;
+
+    /// <summary>The percent the chance moves for a full Intelligence lead: base + spread * (INT - WIS) / (INT + WIS).</summary>
+    public double StatusChanceSpreadPercent { get; set; } = 60;
+
+    /// <summary>The lowest chance in percent that a control or Seal lands, however much Wisdom the target has.</summary>
+    public double StatusChanceMinPercent { get; set; } = 10;
+
+    /// <summary>The highest chance in percent that a control or Seal lands, however much Intelligence the caster has.</summary>
+    public double StatusChanceMaxPercent { get; set; } = 95;
+
     /// <summary>The percent more damage a target under Cuss takes.</summary>
     public double CussDamagePercent { get; set; } = 50;
 

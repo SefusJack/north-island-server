@@ -90,6 +90,10 @@ Environment variables such as `Server__GmAccounts` override them all.
 | `BurstDebuffBasePercent` | The percent of the combination damage paid as burst experience to a fighter who cast no debuff or buff |
 | `BurstDebuffStepPercent` | The percent added to that for each distinct debuff the fighter cast on a monster (hit or missed; counted for that monster's combination damage) and each distinct buff it put on an ally who did damage (once a battle, for every monster) |
 | `DebuffStacking` | Which control and debuff statuses an enemy can carry at once. PerKind: one of each kind (control, with mess counted as one; Shrink or Cuss; Slowdown, Defence Down or Seal; poison), where a status of a kind already on misses, except that a control replaces a sleep and the same debuff cast again lasts longer. OnePerEnemy: any control or debuff misses while the enemy carries one |
+| `StatusChanceBasePercent` | The chance in percent that a control (freeze, sleep, stone, mess and the like) or Seal lands on an enemy whose Wisdom equals the caster's Intelligence. Other debuffs (Shrink, Cuss, Slowdown, Defence Down, poison) do not roll and land whenever `DebuffStacking` lets them; statuses on your own side always land |
+| `StatusChanceSpreadPercent` | How far the caster's Intelligence against the target's Wisdom moves that chance: base + spread * (INT - WIS) / (INT + WIS). With 50 and 60, equal stats give 50%, double the Wisdom 30%, triple 20%, double the Intelligence 70% |
+| `StatusChanceMinPercent` | The lowest chance in percent that a control or Seal lands |
+| `StatusChanceMaxPercent` | The highest chance in percent that a control or Seal lands |
 | `CussDamagePercent` | The percent more damage a target under Cuss takes |
 | `ShrinkDamagePercent` | The percent more damage a target under Shrink takes |
 | `FreezeDamagePercent` | The percent more damage a frozen target takes |
